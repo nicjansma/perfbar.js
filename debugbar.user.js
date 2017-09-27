@@ -161,7 +161,6 @@
             // fill the screen width
             toolBar$.width(screen.width);
 
-
             // add our graph to the body
             $('body').prepend(toolBar$);
 
@@ -214,7 +213,7 @@
             var el$ = sections[section].components[component].$.find(".debugbar-component-value");
 
             // pop new values in first with a change of color
-            if (el$.text() == "--") {
+            if (el$.text() != text && !css) {
                 el$.css("color", "#0d0");
 
                 setTimeout(function() {
@@ -276,7 +275,7 @@
         function updateTimings() {
             var tti = window.BOOMR && BOOMR.plugins && BOOMR.plugins.Continuity && BOOMR.plugins.Continuity.tti;
 
-            updateTiming("DOM", performance.timing.navigationStart, performance.timing.domContentLoadedEventStart);
+            updateTiming("DCL", performance.timing.navigationStart, performance.timing.domContentLoadedEventStart);
             updateTiming("Load", performance.timing.navigationStart, performance.timing.loadEventStart);
             updateTiming("TTI", performance.timing.navigationStart, tti);
 
@@ -286,7 +285,7 @@
         }
 
         function init() {
-            tb.register("Timings", ["DNS", "TCP", "Req", "Res", "DOM", "Load", "TTI"]);
+            tb.register("Timings", ["DNS", "TCP", "Req", "Res", "DCL", "Load", "TTI"]);
 
             // these should all be ready on startup
             updateTiming("DNS", performance.timing.domainLookupStart, performance.timing.domainLookupEnd);
@@ -342,7 +341,7 @@
         window.requestAnimationFrame(frame);
 
         function init() {
-            tb.register("Realtime", ["FPS"]);
+            tb.register("Realtime", ["FPS", "LongTasks"]);
 
             setInterval(reportFps, 1000);
         }
@@ -356,28 +355,42 @@
     // Resources
     //
     components.push((function(tb) {
+        var resLength = 0;
+
         function updateResources() {
             if (!window.BOOMR || !BOOMR.plugins) {
-                // TODO
-                setTimeout(updateResources, 500);
-                return;
+                initEmbeddedBoomerang();
             }
 
             var resources = BOOMR.plugins.ResourceTiming.getFilteredResourceTiming();
 
-            tb.update("Resources", "#", resources.length);
+            if (resources.entries.length != resLength) {
+                tb.update("Resources", "#", resources.entries.length);
 
-            tb.update("Resources", "KB", Math.floor(resources.reduce(function(sum, res) {
-                return sum + (res.transferSize ? res.transferSize : 0);
-            }, 0) / 1024));
+                tb.update("Resources", "KB", Math.floor(resources.entries.reduce(function(sum, res) {
+                    return sum + (res.transferSize ? res.transferSize : 0);
+                }, 0) / 1024));
 
-            tb.update("Resources", "TAO", Math.round(resources.reduce(function(sum, res) {
-                return sum + (res.transferSize ? 1 : 0);
-            }, 0) / resources.length * 100) + "%");
+                tb.update("Resources", "TAO", Math.round(resources.entries.reduce(function(sum, res) {
+                    return sum + (res.encodedBodySize > 0 ? 1 : 0);
+                }, 0) / resources.entries.length * 100) + "%");
+
+                tb.update("Resources", "Cached", Math.round(resources.entries.reduce(function(sum, res) {
+                    // TODO: Should we only use TAO?
+                    var cached = (res.encodedBodySize > 0 && res.transferSize === 0) || (res.duration < 30);
+
+                    return sum + (cached ? 1 : 0);
+                }, 0) / resources.entries.length * 100) + "%");
+
+                resLength = resources.entries.length;
+            }
+
+            setTimeout(updateResources, 1000);
         }
 
         function init() {
-            tb.register("Resources", ["#", "KB", "TAO", "Offload %", "Offload KB", "Edge"]);
+            // TODO: Tooltips
+            tb.register("Resources", ["#", "KB", "TAO", "Cached", "Offload %", "Offload KB", "Edge"]);
 
             updateResources();
         }
@@ -421,14 +434,16 @@
             } else {
                 el$.addClass("active");
 
+                // TODO turn on scroll jank too
+
                 jankInterval = setInterval(jank, 500);
             }
         }
 
         function init() {
             tb.register("Controls", [], {
-                float: "right",
-                "margin-right": "20px"
+                //float: "right",
+                //"margin-right": "20px"
             });
 
             tb.addButton("Controls", "Jank", toggleJank);
@@ -456,7 +471,11 @@
         toolBar.init();
 
         for (var i = 0; i < components.length; i++) {
-            components[i].init();
+            try {
+                components[i].init();
+            } catch (e) {
+                // NOP
+            }
         }
 
         initialized = true;
@@ -471,11 +490,13 @@
 // External Dependencies:
 // 1. jQuery
 // 2. CSSOM
+// 3. Boomerang plugins (ResTiming, Continuity)
 // ==================================================================
 //
 
 // 1. jQuery - load after onload to ensure we don't overwrite the page's version
 window.addEventListener("load", function(event) {
+    // TODO more robust?
     if (!window.$) {
         /*! jQuery v2.2.4 | (c) jQuery Foundation | jquery.org/license */
         !function(a,b){"object"==typeof module&&"object"==typeof module.exports?module.exports=a.document?b(a,!0):function(a){if(!a.document)throw new Error("jQuery requires a window with a document");return b(a)}:b(a)}("undefined"!=typeof window?window:this,function(a,b){var c=[],d=a.document,e=c.slice,f=c.concat,g=c.push,h=c.indexOf,i={},j=i.toString,k=i.hasOwnProperty,l={},m="2.2.4",n=function(a,b){return new n.fn.init(a,b)},o=/^[\s\uFEFF\xA0]+|[\s\uFEFF\xA0]+$/g,p=/^-ms-/,q=/-([\da-z])/gi,r=function(a,b){return b.toUpperCase()};n.fn=n.prototype={jquery:m,constructor:n,selector:"",length:0,toArray:function(){return e.call(this)},get:function(a){return null!=a?0>a?this[a+this.length]:this[a]:e.call(this)},pushStack:function(a){var b=n.merge(this.constructor(),a);return b.prevObject=this,b.context=this.context,b},each:function(a){return n.each(this,a)},map:function(a){return this.pushStack(n.map(this,function(b,c){return a.call(b,c,b)}))},slice:function(){return this.pushStack(e.apply(this,arguments))},first:function(){return this.eq(0)},last:function(){return this.eq(-1)},eq:function(a){var b=this.length,c=+a+(0>a?b:0);return this.pushStack(c>=0&&b>c?[this[c]]:[])},end:function(){return this.prevObject||this.constructor()},push:g,sort:c.sort,splice:c.splice},n.extend=n.fn.extend=function(){var a,b,c,d,e,f,g=arguments[0]||{},h=1,i=arguments.length,j=!1;for("boolean"==typeof g&&(j=g,g=arguments[h]||{},h++),"object"==typeof g||n.isFunction(g)||(g={}),h===i&&(g=this,h--);i>h;h++)if(null!=(a=arguments[h]))for(b in a)c=g[b],d=a[b],g!==d&&(j&&d&&(n.isPlainObject(d)||(e=n.isArray(d)))?(e?(e=!1,f=c&&n.isArray(c)?c:[]):f=c&&n.isPlainObject(c)?c:{},g[b]=n.extend(j,f,d)):void 0!==d&&(g[b]=d));return g},n.extend({expando:"jQuery"+(m+Math.random()).replace(/\D/g,""),isReady:!0,error:function(a){throw new Error(a)},noop:function(){},isFunction:function(a){return"function"===n.type(a)},isArray:Array.isArray,isWindow:function(a){return null!=a&&a===a.window},isNumeric:function(a){var b=a&&a.toString();return!n.isArray(a)&&b-parseFloat(b)+1>=0},isPlainObject:function(a){var b;if("object"!==n.type(a)||a.nodeType||n.isWindow(a))return!1;if(a.constructor&&!k.call(a,"constructor")&&!k.call(a.constructor.prototype||{},"isPrototypeOf"))return!1;for(b in a);return void 0===b||k.call(a,b)},isEmptyObject:function(a){var b;for(b in a)return!1;return!0},type:function(a){return null==a?a+"":"object"==typeof a||"function"==typeof a?i[j.call(a)]||"object":typeof a},globalEval:function(a){var b,c=eval;a=n.trim(a),a&&(1===a.indexOf("use strict")?(b=d.createElement("script"),b.text=a,d.head.appendChild(b).parentNode.removeChild(b)):c(a))},camelCase:function(a){return a.replace(p,"ms-").replace(q,r)},nodeName:function(a,b){return a.nodeName&&a.nodeName.toLowerCase()===b.toLowerCase()},each:function(a,b){var c,d=0;if(s(a)){for(c=a.length;c>d;d++)if(b.call(a[d],d,a[d])===!1)break}else for(d in a)if(b.call(a[d],d,a[d])===!1)break;return a},trim:function(a){return null==a?"":(a+"").replace(o,"")},makeArray:function(a,b){var c=b||[];return null!=a&&(s(Object(a))?n.merge(c,"string"==typeof a?[a]:a):g.call(c,a)),c},inArray:function(a,b,c){return null==b?-1:h.call(b,a,c)},merge:function(a,b){for(var c=+b.length,d=0,e=a.length;c>d;d++)a[e++]=b[d];return a.length=e,a},grep:function(a,b,c){for(var d,e=[],f=0,g=a.length,h=!c;g>f;f++)d=!b(a[f],f),d!==h&&e.push(a[f]);return e},map:function(a,b,c){var d,e,g=0,h=[];if(s(a))for(d=a.length;d>g;g++)e=b(a[g],g,c),null!=e&&h.push(e);else for(g in a)e=b(a[g],g,c),null!=e&&h.push(e);return f.apply([],h)},guid:1,proxy:function(a,b){var c,d,f;return"string"==typeof b&&(c=a[b],b=a,a=c),n.isFunction(a)?(d=e.call(arguments,2),f=function(){return a.apply(b||this,d.concat(e.call(arguments)))},f.guid=a.guid=a.guid||n.guid++,f):void 0},now:Date.now,support:l}),"function"==typeof Symbol&&(n.fn[Symbol.iterator]=c[Symbol.iterator]),n.each("Boolean Number String Function Array Date RegExp Object Error Symbol".split(" "),function(a,b){i["[object "+b+"]"]=b.toLowerCase()});function s(a){var b=!!a&&"length"in a&&a.length,c=n.type(a);return"function"===c||n.isWindow(a)?!1:"array"===c||0===b||"number"==typeof b&&b>0&&b-1 in a}var t=function(a){var b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r,s,t,u="sizzle"+1*new Date,v=a.document,w=0,x=0,y=ga(),z=ga(),A=ga(),B=function(a,b){return a===b&&(l=!0),0},C=1<<31,D={}.hasOwnProperty,E=[],F=E.pop,G=E.push,H=E.push,I=E.slice,J=function(a,b){for(var c=0,d=a.length;d>c;c++)if(a[c]===b)return c;return-1},K="checked|selected|async|autofocus|autoplay|controls|defer|disabled|hidden|ismap|loop|multiple|open|readonly|required|scoped",L="[\\x20\\t\\r\\n\\f]",M="(?:\\\\.|[\\w-]|[^\\x00-\\xa0])+",N="\\["+L+"*("+M+")(?:"+L+"*([*^$|!~]?=)"+L+"*(?:'((?:\\\\.|[^\\\\'])*)'|\"((?:\\\\.|[^\\\\\"])*)\"|("+M+"))|)"+L+"*\\]",O=":("+M+")(?:\\((('((?:\\\\.|[^\\\\'])*)'|\"((?:\\\\.|[^\\\\\"])*)\")|((?:\\\\.|[^\\\\()[\\]]|"+N+")*)|.*)\\)|)",P=new RegExp(L+"+","g"),Q=new RegExp("^"+L+"+|((?:^|[^\\\\])(?:\\\\.)*)"+L+"+$","g"),R=new RegExp("^"+L+"*,"+L+"*"),S=new RegExp("^"+L+"*([>+~]|"+L+")"+L+"*"),T=new RegExp("="+L+"*([^\\]'\"]*?)"+L+"*\\]","g"),U=new RegExp(O),V=new RegExp("^"+M+"$"),W={ID:new RegExp("^#("+M+")"),CLASS:new RegExp("^\\.("+M+")"),TAG:new RegExp("^("+M+"|[*])"),ATTR:new RegExp("^"+N),PSEUDO:new RegExp("^"+O),CHILD:new RegExp("^:(only|first|last|nth|nth-last)-(child|of-type)(?:\\("+L+"*(even|odd|(([+-]|)(\\d*)n|)"+L+"*(?:([+-]|)"+L+"*(\\d+)|))"+L+"*\\)|)","i"),bool:new RegExp("^(?:"+K+")$","i"),needsContext:new RegExp("^"+L+"*[>+~]|:(even|odd|eq|gt|lt|nth|first|last)(?:\\("+L+"*((?:-\\d)?\\d*)"+L+"*\\)|)(?=[^-]|$)","i")},X=/^(?:input|select|textarea|button)$/i,Y=/^h\d$/i,Z=/^[^{]+\{\s*\[native \w/,$=/^(?:#([\w-]+)|(\w+)|\.([\w-]+))$/,_=/[+~]/,aa=/'|\\/g,ba=new RegExp("\\\\([\\da-f]{1,6}"+L+"?|("+L+")|.)","ig"),ca=function(a,b,c){var d="0x"+b-65536;return d!==d||c?b:0>d?String.fromCharCode(d+65536):String.fromCharCode(d>>10|55296,1023&d|56320)},da=function(){m()};try{H.apply(E=I.call(v.childNodes),v.childNodes),E[v.childNodes.length].nodeType}catch(ea){H={apply:E.length?function(a,b){G.apply(a,I.call(b))}:function(a,b){var c=a.length,d=0;while(a[c++]=b[d++]);a.length=c-1}}}function fa(a,b,d,e){var f,h,j,k,l,o,r,s,w=b&&b.ownerDocument,x=b?b.nodeType:9;if(d=d||[],"string"!=typeof a||!a||1!==x&&9!==x&&11!==x)return d;if(!e&&((b?b.ownerDocument||b:v)!==n&&m(b),b=b||n,p)){if(11!==x&&(o=$.exec(a)))if(f=o[1]){if(9===x){if(!(j=b.getElementById(f)))return d;if(j.id===f)return d.push(j),d}else if(w&&(j=w.getElementById(f))&&t(b,j)&&j.id===f)return d.push(j),d}else{if(o[2])return H.apply(d,b.getElementsByTagName(a)),d;if((f=o[3])&&c.getElementsByClassName&&b.getElementsByClassName)return H.apply(d,b.getElementsByClassName(f)),d}if(c.qsa&&!A[a+" "]&&(!q||!q.test(a))){if(1!==x)w=b,s=a;else if("object"!==b.nodeName.toLowerCase()){(k=b.getAttribute("id"))?k=k.replace(aa,"\\$&"):b.setAttribute("id",k=u),r=g(a),h=r.length,l=V.test(k)?"#"+k:"[id='"+k+"']";while(h--)r[h]=l+" "+qa(r[h]);s=r.join(","),w=_.test(a)&&oa(b.parentNode)||b}if(s)try{return H.apply(d,w.querySelectorAll(s)),d}catch(y){}finally{k===u&&b.removeAttribute("id")}}}return i(a.replace(Q,"$1"),b,d,e)}function ga(){var a=[];function b(c,e){return a.push(c+" ")>d.cacheLength&&delete b[a.shift()],b[c+" "]=e}return b}function ha(a){return a[u]=!0,a}function ia(a){var b=n.createElement("div");try{return!!a(b)}catch(c){return!1}finally{b.parentNode&&b.parentNode.removeChild(b),b=null}}function ja(a,b){var c=a.split("|"),e=c.length;while(e--)d.attrHandle[c[e]]=b}function ka(a,b){var c=b&&a,d=c&&1===a.nodeType&&1===b.nodeType&&(~b.sourceIndex||C)-(~a.sourceIndex||C);if(d)return d;if(c)while(c=c.nextSibling)if(c===b)return-1;return a?1:-1}function la(a){return function(b){var c=b.nodeName.toLowerCase();return"input"===c&&b.type===a}}function ma(a){return function(b){var c=b.nodeName.toLowerCase();return("input"===c||"button"===c)&&b.type===a}}function na(a){return ha(function(b){return b=+b,ha(function(c,d){var e,f=a([],c.length,b),g=f.length;while(g--)c[e=f[g]]&&(c[e]=!(d[e]=c[e]))})})}function oa(a){return a&&"undefined"!=typeof a.getElementsByTagName&&a}c=fa.support={},f=fa.isXML=function(a){var b=a&&(a.ownerDocument||a).documentElement;return b?"HTML"!==b.nodeName:!1},m=fa.setDocument=function(a){var b,e,g=a?a.ownerDocument||a:v;return g!==n&&9===g.nodeType&&g.documentElement?(n=g,o=n.documentElement,p=!f(n),(e=n.defaultView)&&e.top!==e&&(e.addEventListener?e.addEventListener("unload",da,!1):e.attachEvent&&e.attachEvent("onunload",da)),c.attributes=ia(function(a){return a.className="i",!a.getAttribute("className")}),c.getElementsByTagName=ia(function(a){return a.appendChild(n.createComment("")),!a.getElementsByTagName("*").length}),c.getElementsByClassName=Z.test(n.getElementsByClassName),c.getById=ia(function(a){return o.appendChild(a).id=u,!n.getElementsByName||!n.getElementsByName(u).length}),c.getById?(d.find.ID=function(a,b){if("undefined"!=typeof b.getElementById&&p){var c=b.getElementById(a);return c?[c]:[]}},d.filter.ID=function(a){var b=a.replace(ba,ca);return function(a){return a.getAttribute("id")===b}}):(delete d.find.ID,d.filter.ID=function(a){var b=a.replace(ba,ca);return function(a){var c="undefined"!=typeof a.getAttributeNode&&a.getAttributeNode("id");return c&&c.value===b}}),d.find.TAG=c.getElementsByTagName?function(a,b){return"undefined"!=typeof b.getElementsByTagName?b.getElementsByTagName(a):c.qsa?b.querySelectorAll(a):void 0}:function(a,b){var c,d=[],e=0,f=b.getElementsByTagName(a);if("*"===a){while(c=f[e++])1===c.nodeType&&d.push(c);return d}return f},d.find.CLASS=c.getElementsByClassName&&function(a,b){return"undefined"!=typeof b.getElementsByClassName&&p?b.getElementsByClassName(a):void 0},r=[],q=[],(c.qsa=Z.test(n.querySelectorAll))&&(ia(function(a){o.appendChild(a).innerHTML="<a id='"+u+"'></a><select id='"+u+"-\r\\' msallowcapture=''><option selected=''></option></select>",a.querySelectorAll("[msallowcapture^='']").length&&q.push("[*^$]="+L+"*(?:''|\"\")"),a.querySelectorAll("[selected]").length||q.push("\\["+L+"*(?:value|"+K+")"),a.querySelectorAll("[id~="+u+"-]").length||q.push("~="),a.querySelectorAll(":checked").length||q.push(":checked"),a.querySelectorAll("a#"+u+"+*").length||q.push(".#.+[+~]")}),ia(function(a){var b=n.createElement("input");b.setAttribute("type","hidden"),a.appendChild(b).setAttribute("name","D"),a.querySelectorAll("[name=d]").length&&q.push("name"+L+"*[*^$|!~]?="),a.querySelectorAll(":enabled").length||q.push(":enabled",":disabled"),a.querySelectorAll("*,:x"),q.push(",.*:")})),(c.matchesSelector=Z.test(s=o.matches||o.webkitMatchesSelector||o.mozMatchesSelector||o.oMatchesSelector||o.msMatchesSelector))&&ia(function(a){c.disconnectedMatch=s.call(a,"div"),s.call(a,"[s!='']:x"),r.push("!=",O)}),q=q.length&&new RegExp(q.join("|")),r=r.length&&new RegExp(r.join("|")),b=Z.test(o.compareDocumentPosition),t=b||Z.test(o.contains)?function(a,b){var c=9===a.nodeType?a.documentElement:a,d=b&&b.parentNode;return a===d||!(!d||1!==d.nodeType||!(c.contains?c.contains(d):a.compareDocumentPosition&&16&a.compareDocumentPosition(d)))}:function(a,b){if(b)while(b=b.parentNode)if(b===a)return!0;return!1},B=b?function(a,b){if(a===b)return l=!0,0;var d=!a.compareDocumentPosition-!b.compareDocumentPosition;return d?d:(d=(a.ownerDocument||a)===(b.ownerDocument||b)?a.compareDocumentPosition(b):1,1&d||!c.sortDetached&&b.compareDocumentPosition(a)===d?a===n||a.ownerDocument===v&&t(v,a)?-1:b===n||b.ownerDocument===v&&t(v,b)?1:k?J(k,a)-J(k,b):0:4&d?-1:1)}:function(a,b){if(a===b)return l=!0,0;var c,d=0,e=a.parentNode,f=b.parentNode,g=[a],h=[b];if(!e||!f)return a===n?-1:b===n?1:e?-1:f?1:k?J(k,a)-J(k,b):0;if(e===f)return ka(a,b);c=a;while(c=c.parentNode)g.unshift(c);c=b;while(c=c.parentNode)h.unshift(c);while(g[d]===h[d])d++;return d?ka(g[d],h[d]):g[d]===v?-1:h[d]===v?1:0},n):n},fa.matches=function(a,b){return fa(a,null,null,b)},fa.matchesSelector=function(a,b){if((a.ownerDocument||a)!==n&&m(a),b=b.replace(T,"='$1']"),c.matchesSelector&&p&&!A[b+" "]&&(!r||!r.test(b))&&(!q||!q.test(b)))try{var d=s.call(a,b);if(d||c.disconnectedMatch||a.document&&11!==a.document.nodeType)return d}catch(e){}return fa(b,n,null,[a]).length>0},fa.contains=function(a,b){return(a.ownerDocument||a)!==n&&m(a),t(a,b)},fa.attr=function(a,b){(a.ownerDocument||a)!==n&&m(a);var e=d.attrHandle[b.toLowerCase()],f=e&&D.call(d.attrHandle,b.toLowerCase())?e(a,b,!p):void 0;return void 0!==f?f:c.attributes||!p?a.getAttribute(b):(f=a.getAttributeNode(b))&&f.specified?f.value:null},fa.error=function(a){throw new Error("Syntax error, unrecognized expression: "+a)},fa.uniqueSort=function(a){var b,d=[],e=0,f=0;if(l=!c.detectDuplicates,k=!c.sortStable&&a.slice(0),a.sort(B),l){while(b=a[f++])b===a[f]&&(e=d.push(f));while(e--)a.splice(d[e],1)}return k=null,a},e=fa.getText=function(a){var b,c="",d=0,f=a.nodeType;if(f){if(1===f||9===f||11===f){if("string"==typeof a.textContent)return a.textContent;for(a=a.firstChild;a;a=a.nextSibling)c+=e(a)}else if(3===f||4===f)return a.nodeValue}else while(b=a[d++])c+=e(b);return c},d=fa.selectors={cacheLength:50,createPseudo:ha,match:W,attrHandle:{},find:{},relative:{">":{dir:"parentNode",first:!0}," ":{dir:"parentNode"},"+":{dir:"previousSibling",first:!0},"~":{dir:"previousSibling"}},preFilter:{ATTR:function(a){return a[1]=a[1].replace(ba,ca),a[3]=(a[3]||a[4]||a[5]||"").replace(ba,ca),"~="===a[2]&&(a[3]=" "+a[3]+" "),a.slice(0,4)},CHILD:function(a){return a[1]=a[1].toLowerCase(),"nth"===a[1].slice(0,3)?(a[3]||fa.error(a[0]),a[4]=+(a[4]?a[5]+(a[6]||1):2*("even"===a[3]||"odd"===a[3])),a[5]=+(a[7]+a[8]||"odd"===a[3])):a[3]&&fa.error(a[0]),a},PSEUDO:function(a){var b,c=!a[6]&&a[2];return W.CHILD.test(a[0])?null:(a[3]?a[2]=a[4]||a[5]||"":c&&U.test(c)&&(b=g(c,!0))&&(b=c.indexOf(")",c.length-b)-c.length)&&(a[0]=a[0].slice(0,b),a[2]=c.slice(0,b)),a.slice(0,3))}},filter:{TAG:function(a){var b=a.replace(ba,ca).toLowerCase();return"*"===a?function(){return!0}:function(a){return a.nodeName&&a.nodeName.toLowerCase()===b}},CLASS:function(a){var b=y[a+" "];return b||(b=new RegExp("(^|"+L+")"+a+"("+L+"|$)"))&&y(a,function(a){return b.test("string"==typeof a.className&&a.className||"undefined"!=typeof a.getAttribute&&a.getAttribute("class")||"")})},ATTR:function(a,b,c){return function(d){var e=fa.attr(d,a);return null==e?"!="===b:b?(e+="","="===b?e===c:"!="===b?e!==c:"^="===b?c&&0===e.indexOf(c):"*="===b?c&&e.indexOf(c)>-1:"$="===b?c&&e.slice(-c.length)===c:"~="===b?(" "+e.replace(P," ")+" ").indexOf(c)>-1:"|="===b?e===c||e.slice(0,c.length+1)===c+"-":!1):!0}},CHILD:function(a,b,c,d,e){var f="nth"!==a.slice(0,3),g="last"!==a.slice(-4),h="of-type"===b;return 1===d&&0===e?function(a){return!!a.parentNode}:function(b,c,i){var j,k,l,m,n,o,p=f!==g?"nextSibling":"previousSibling",q=b.parentNode,r=h&&b.nodeName.toLowerCase(),s=!i&&!h,t=!1;if(q){if(f){while(p){m=b;while(m=m[p])if(h?m.nodeName.toLowerCase()===r:1===m.nodeType)return!1;o=p="only"===a&&!o&&"nextSibling"}return!0}if(o=[g?q.firstChild:q.lastChild],g&&s){m=q,l=m[u]||(m[u]={}),k=l[m.uniqueID]||(l[m.uniqueID]={}),j=k[a]||[],n=j[0]===w&&j[1],t=n&&j[2],m=n&&q.childNodes[n];while(m=++n&&m&&m[p]||(t=n=0)||o.pop())if(1===m.nodeType&&++t&&m===b){k[a]=[w,n,t];break}}else if(s&&(m=b,l=m[u]||(m[u]={}),k=l[m.uniqueID]||(l[m.uniqueID]={}),j=k[a]||[],n=j[0]===w&&j[1],t=n),t===!1)while(m=++n&&m&&m[p]||(t=n=0)||o.pop())if((h?m.nodeName.toLowerCase()===r:1===m.nodeType)&&++t&&(s&&(l=m[u]||(m[u]={}),k=l[m.uniqueID]||(l[m.uniqueID]={}),k[a]=[w,t]),m===b))break;return t-=e,t===d||t%d===0&&t/d>=0}}},PSEUDO:function(a,b){var c,e=d.pseudos[a]||d.setFilters[a.toLowerCase()]||fa.error("unsupported pseudo: "+a);return e[u]?e(b):e.length>1?(c=[a,a,"",b],d.setFilters.hasOwnProperty(a.toLowerCase())?ha(function(a,c){var d,f=e(a,b),g=f.length;while(g--)d=J(a,f[g]),a[d]=!(c[d]=f[g])}):function(a){return e(a,0,c)}):e}},pseudos:{not:ha(function(a){var b=[],c=[],d=h(a.replace(Q,"$1"));return d[u]?ha(function(a,b,c,e){var f,g=d(a,null,e,[]),h=a.length;while(h--)(f=g[h])&&(a[h]=!(b[h]=f))}):function(a,e,f){return b[0]=a,d(b,null,f,c),b[0]=null,!c.pop()}}),has:ha(function(a){return function(b){return fa(a,b).length>0}}),contains:ha(function(a){return a=a.replace(ba,ca),function(b){return(b.textContent||b.innerText||e(b)).indexOf(a)>-1}}),lang:ha(function(a){return V.test(a||"")||fa.error("unsupported lang: "+a),a=a.replace(ba,ca).toLowerCase(),function(b){var c;do if(c=p?b.lang:b.getAttribute("xml:lang")||b.getAttribute("lang"))return c=c.toLowerCase(),c===a||0===c.indexOf(a+"-");while((b=b.parentNode)&&1===b.nodeType);return!1}}),target:function(b){var c=a.location&&a.location.hash;return c&&c.slice(1)===b.id},root:function(a){return a===o},focus:function(a){return a===n.activeElement&&(!n.hasFocus||n.hasFocus())&&!!(a.type||a.href||~a.tabIndex)},enabled:function(a){return a.disabled===!1},disabled:function(a){return a.disabled===!0},checked:function(a){var b=a.nodeName.toLowerCase();return"input"===b&&!!a.checked||"option"===b&&!!a.selected},selected:function(a){return a.parentNode&&a.parentNode.selectedIndex,a.selected===!0},empty:function(a){for(a=a.firstChild;a;a=a.nextSibling)if(a.nodeType<6)return!1;return!0},parent:function(a){return!d.pseudos.empty(a)},header:function(a){return Y.test(a.nodeName)},input:function(a){return X.test(a.nodeName)},button:function(a){var b=a.nodeName.toLowerCase();return"input"===b&&"button"===a.type||"button"===b},text:function(a){var b;return"input"===a.nodeName.toLowerCase()&&"text"===a.type&&(null==(b=a.getAttribute("type"))||"text"===b.toLowerCase())},first:na(function(){return[0]}),last:na(function(a,b){return[b-1]}),eq:na(function(a,b,c){return[0>c?c+b:c]}),even:na(function(a,b){for(var c=0;b>c;c+=2)a.push(c);return a}),odd:na(function(a,b){for(var c=1;b>c;c+=2)a.push(c);return a}),lt:na(function(a,b,c){for(var d=0>c?c+b:c;--d>=0;)a.push(d);return a}),gt:na(function(a,b,c){for(var d=0>c?c+b:c;++d<b;)a.push(d);return a})}},d.pseudos.nth=d.pseudos.eq;for(b in{radio:!0,checkbox:!0,file:!0,password:!0,image:!0})d.pseudos[b]=la(b);for(b in{submit:!0,reset:!0})d.pseudos[b]=ma(b);function pa(){}pa.prototype=d.filters=d.pseudos,d.setFilters=new pa,g=fa.tokenize=function(a,b){var c,e,f,g,h,i,j,k=z[a+" "];if(k)return b?0:k.slice(0);h=a,i=[],j=d.preFilter;while(h){c&&!(e=R.exec(h))||(e&&(h=h.slice(e[0].length)||h),i.push(f=[])),c=!1,(e=S.exec(h))&&(c=e.shift(),f.push({value:c,type:e[0].replace(Q," ")}),h=h.slice(c.length));for(g in d.filter)!(e=W[g].exec(h))||j[g]&&!(e=j[g](e))||(c=e.shift(),f.push({value:c,type:g,matches:e}),h=h.slice(c.length));if(!c)break}return b?h.length:h?fa.error(a):z(a,i).slice(0)};function qa(a){for(var b=0,c=a.length,d="";c>b;b++)d+=a[b].value;return d}function ra(a,b,c){var d=b.dir,e=c&&"parentNode"===d,f=x++;return b.first?function(b,c,f){while(b=b[d])if(1===b.nodeType||e)return a(b,c,f)}:function(b,c,g){var h,i,j,k=[w,f];if(g){while(b=b[d])if((1===b.nodeType||e)&&a(b,c,g))return!0}else while(b=b[d])if(1===b.nodeType||e){if(j=b[u]||(b[u]={}),i=j[b.uniqueID]||(j[b.uniqueID]={}),(h=i[d])&&h[0]===w&&h[1]===f)return k[2]=h[2];if(i[d]=k,k[2]=a(b,c,g))return!0}}}function sa(a){return a.length>1?function(b,c,d){var e=a.length;while(e--)if(!a[e](b,c,d))return!1;return!0}:a[0]}function ta(a,b,c){for(var d=0,e=b.length;e>d;d++)fa(a,b[d],c);return c}function ua(a,b,c,d,e){for(var f,g=[],h=0,i=a.length,j=null!=b;i>h;h++)(f=a[h])&&(c&&!c(f,d,e)||(g.push(f),j&&b.push(h)));return g}function va(a,b,c,d,e,f){return d&&!d[u]&&(d=va(d)),e&&!e[u]&&(e=va(e,f)),ha(function(f,g,h,i){var j,k,l,m=[],n=[],o=g.length,p=f||ta(b||"*",h.nodeType?[h]:h,[]),q=!a||!f&&b?p:ua(p,m,a,h,i),r=c?e||(f?a:o||d)?[]:g:q;if(c&&c(q,r,h,i),d){j=ua(r,n),d(j,[],h,i),k=j.length;while(k--)(l=j[k])&&(r[n[k]]=!(q[n[k]]=l))}if(f){if(e||a){if(e){j=[],k=r.length;while(k--)(l=r[k])&&j.push(q[k]=l);e(null,r=[],j,i)}k=r.length;while(k--)(l=r[k])&&(j=e?J(f,l):m[k])>-1&&(f[j]=!(g[j]=l))}}else r=ua(r===g?r.splice(o,r.length):r),e?e(null,g,r,i):H.apply(g,r)})}function wa(a){for(var b,c,e,f=a.length,g=d.relative[a[0].type],h=g||d.relative[" "],i=g?1:0,k=ra(function(a){return a===b},h,!0),l=ra(function(a){return J(b,a)>-1},h,!0),m=[function(a,c,d){var e=!g&&(d||c!==j)||((b=c).nodeType?k(a,c,d):l(a,c,d));return b=null,e}];f>i;i++)if(c=d.relative[a[i].type])m=[ra(sa(m),c)];else{if(c=d.filter[a[i].type].apply(null,a[i].matches),c[u]){for(e=++i;f>e;e++)if(d.relative[a[e].type])break;return va(i>1&&sa(m),i>1&&qa(a.slice(0,i-1).concat({value:" "===a[i-2].type?"*":""})).replace(Q,"$1"),c,e>i&&wa(a.slice(i,e)),f>e&&wa(a=a.slice(e)),f>e&&qa(a))}m.push(c)}return sa(m)}function xa(a,b){var c=b.length>0,e=a.length>0,f=function(f,g,h,i,k){var l,o,q,r=0,s="0",t=f&&[],u=[],v=j,x=f||e&&d.find.TAG("*",k),y=w+=null==v?1:Math.random()||.1,z=x.length;for(k&&(j=g===n||g||k);s!==z&&null!=(l=x[s]);s++){if(e&&l){o=0,g||l.ownerDocument===n||(m(l),h=!p);while(q=a[o++])if(q(l,g||n,h)){i.push(l);break}k&&(w=y)}c&&((l=!q&&l)&&r--,f&&t.push(l))}if(r+=s,c&&s!==r){o=0;while(q=b[o++])q(t,u,g,h);if(f){if(r>0)while(s--)t[s]||u[s]||(u[s]=F.call(i));u=ua(u)}H.apply(i,u),k&&!f&&u.length>0&&r+b.length>1&&fa.uniqueSort(i)}return k&&(w=y,j=v),t};return c?ha(f):f}return h=fa.compile=function(a,b){var c,d=[],e=[],f=A[a+" "];if(!f){b||(b=g(a)),c=b.length;while(c--)f=wa(b[c]),f[u]?d.push(f):e.push(f);f=A(a,xa(e,d)),f.selector=a}return f},i=fa.select=function(a,b,e,f){var i,j,k,l,m,n="function"==typeof a&&a,o=!f&&g(a=n.selector||a);if(e=e||[],1===o.length){if(j=o[0]=o[0].slice(0),j.length>2&&"ID"===(k=j[0]).type&&c.getById&&9===b.nodeType&&p&&d.relative[j[1].type]){if(b=(d.find.ID(k.matches[0].replace(ba,ca),b)||[])[0],!b)return e;n&&(b=b.parentNode),a=a.slice(j.shift().value.length)}i=W.needsContext.test(a)?0:j.length;while(i--){if(k=j[i],d.relative[l=k.type])break;if((m=d.find[l])&&(f=m(k.matches[0].replace(ba,ca),_.test(j[0].type)&&oa(b.parentNode)||b))){if(j.splice(i,1),a=f.length&&qa(j),!a)return H.apply(e,f),e;break}}}return(n||h(a,o))(f,b,!p,e,!b||_.test(a)&&oa(b.parentNode)||b),e},c.sortStable=u.split("").sort(B).join("")===u,c.detectDuplicates=!!l,m(),c.sortDetached=ia(function(a){return 1&a.compareDocumentPosition(n.createElement("div"))}),ia(function(a){return a.innerHTML="<a href='#'></a>","#"===a.firstChild.getAttribute("href")})||ja("type|href|height|width",function(a,b,c){return c?void 0:a.getAttribute(b,"type"===b.toLowerCase()?1:2)}),c.attributes&&ia(function(a){return a.innerHTML="<input/>",a.firstChild.setAttribute("value",""),""===a.firstChild.getAttribute("value")})||ja("value",function(a,b,c){return c||"input"!==a.nodeName.toLowerCase()?void 0:a.defaultValue}),ia(function(a){return null==a.getAttribute("disabled")})||ja(K,function(a,b,c){var d;return c?void 0:a[b]===!0?b.toLowerCase():(d=a.getAttributeNode(b))&&d.specified?d.value:null}),fa}(a);n.find=t,n.expr=t.selectors,n.expr[":"]=n.expr.pseudos,n.uniqueSort=n.unique=t.uniqueSort,n.text=t.getText,n.isXMLDoc=t.isXML,n.contains=t.contains;var u=function(a,b,c){var d=[],e=void 0!==c;while((a=a[b])&&9!==a.nodeType)if(1===a.nodeType){if(e&&n(a).is(c))break;d.push(a)}return d},v=function(a,b){for(var c=[];a;a=a.nextSibling)1===a.nodeType&&a!==b&&c.push(a);return c},w=n.expr.match.needsContext,x=/^<([\w-]+)\s*\/?>(?:<\/\1>|)$/,y=/^.[^:#\[\.,]*$/;function z(a,b,c){if(n.isFunction(b))return n.grep(a,function(a,d){return!!b.call(a,d,a)!==c});if(b.nodeType)return n.grep(a,function(a){return a===b!==c});if("string"==typeof b){if(y.test(b))return n.filter(b,a,c);b=n.filter(b,a)}return n.grep(a,function(a){return h.call(b,a)>-1!==c})}n.filter=function(a,b,c){var d=b[0];return c&&(a=":not("+a+")"),1===b.length&&1===d.nodeType?n.find.matchesSelector(d,a)?[d]:[]:n.find.matches(a,n.grep(b,function(a){return 1===a.nodeType}))},n.fn.extend({find:function(a){var b,c=this.length,d=[],e=this;if("string"!=typeof a)return this.pushStack(n(a).filter(function(){for(b=0;c>b;b++)if(n.contains(e[b],this))return!0}));for(b=0;c>b;b++)n.find(a,e[b],d);return d=this.pushStack(c>1?n.unique(d):d),d.selector=this.selector?this.selector+" "+a:a,d},filter:function(a){return this.pushStack(z(this,a||[],!1))},not:function(a){return this.pushStack(z(this,a||[],!0))},is:function(a){return!!z(this,"string"==typeof a&&w.test(a)?n(a):a||[],!1).length}});var A,B=/^(?:\s*(<[\w\W]+>)[^>]*|#([\w-]*))$/,C=n.fn.init=function(a,b,c){var e,f;if(!a)return this;if(c=c||A,"string"==typeof a){if(e="<"===a[0]&&">"===a[a.length-1]&&a.length>=3?[null,a,null]:B.exec(a),!e||!e[1]&&b)return!b||b.jquery?(b||c).find(a):this.constructor(b).find(a);if(e[1]){if(b=b instanceof n?b[0]:b,n.merge(this,n.parseHTML(e[1],b&&b.nodeType?b.ownerDocument||b:d,!0)),x.test(e[1])&&n.isPlainObject(b))for(e in b)n.isFunction(this[e])?this[e](b[e]):this.attr(e,b[e]);return this}return f=d.getElementById(e[2]),f&&f.parentNode&&(this.length=1,this[0]=f),this.context=d,this.selector=a,this}return a.nodeType?(this.context=this[0]=a,this.length=1,this):n.isFunction(a)?void 0!==c.ready?c.ready(a):a(n):(void 0!==a.selector&&(this.selector=a.selector,this.context=a.context),n.makeArray(a,this))};C.prototype=n.fn,A=n(d);var D=/^(?:parents|prev(?:Until|All))/,E={children:!0,contents:!0,next:!0,prev:!0};n.fn.extend({has:function(a){var b=n(a,this),c=b.length;return this.filter(function(){for(var a=0;c>a;a++)if(n.contains(this,b[a]))return!0})},closest:function(a,b){for(var c,d=0,e=this.length,f=[],g=w.test(a)||"string"!=typeof a?n(a,b||this.context):0;e>d;d++)for(c=this[d];c&&c!==b;c=c.parentNode)if(c.nodeType<11&&(g?g.index(c)>-1:1===c.nodeType&&n.find.matchesSelector(c,a))){f.push(c);break}return this.pushStack(f.length>1?n.uniqueSort(f):f)},index:function(a){return a?"string"==typeof a?h.call(n(a),this[0]):h.call(this,a.jquery?a[0]:a):this[0]&&this[0].parentNode?this.first().prevAll().length:-1},add:function(a,b){return this.pushStack(n.uniqueSort(n.merge(this.get(),n(a,b))))},addBack:function(a){return this.add(null==a?this.prevObject:this.prevObject.filter(a))}});function F(a,b){while((a=a[b])&&1!==a.nodeType);return a}n.each({parent:function(a){var b=a.parentNode;return b&&11!==b.nodeType?b:null},parents:function(a){return u(a,"parentNode")},parentsUntil:function(a,b,c){return u(a,"parentNode",c)},next:function(a){return F(a,"nextSibling")},prev:function(a){return F(a,"previousSibling")},nextAll:function(a){return u(a,"nextSibling")},prevAll:function(a){return u(a,"previousSibling")},nextUntil:function(a,b,c){return u(a,"nextSibling",c)},prevUntil:function(a,b,c){return u(a,"previousSibling",c)},siblings:function(a){return v((a.parentNode||{}).firstChild,a)},children:function(a){return v(a.firstChild)},contents:function(a){return a.contentDocument||n.merge([],a.childNodes)}},function(a,b){n.fn[a]=function(c,d){var e=n.map(this,b,c);return"Until"!==a.slice(-5)&&(d=c),d&&"string"==typeof d&&(e=n.filter(d,e)),this.length>1&&(E[a]||n.uniqueSort(e),D.test(a)&&e.reverse()),this.pushStack(e)}});var G=/\S+/g;function H(a){var b={};return n.each(a.match(G)||[],function(a,c){b[c]=!0}),b}n.Callbacks=function(a){a="string"==typeof a?H(a):n.extend({},a);var b,c,d,e,f=[],g=[],h=-1,i=function(){for(e=a.once,d=b=!0;g.length;h=-1){c=g.shift();while(++h<f.length)f[h].apply(c[0],c[1])===!1&&a.stopOnFalse&&(h=f.length,c=!1)}a.memory||(c=!1),b=!1,e&&(f=c?[]:"")},j={add:function(){return f&&(c&&!b&&(h=f.length-1,g.push(c)),function d(b){n.each(b,function(b,c){n.isFunction(c)?a.unique&&j.has(c)||f.push(c):c&&c.length&&"string"!==n.type(c)&&d(c)})}(arguments),c&&!b&&i()),this},remove:function(){return n.each(arguments,function(a,b){var c;while((c=n.inArray(b,f,c))>-1)f.splice(c,1),h>=c&&h--}),this},has:function(a){return a?n.inArray(a,f)>-1:f.length>0},empty:function(){return f&&(f=[]),this},disable:function(){return e=g=[],f=c="",this},disabled:function(){return!f},lock:function(){return e=g=[],c||(f=c=""),this},locked:function(){return!!e},fireWith:function(a,c){return e||(c=c||[],c=[a,c.slice?c.slice():c],g.push(c),b||i()),this},fire:function(){return j.fireWith(this,arguments),this},fired:function(){return!!d}};return j},n.extend({Deferred:function(a){var b=[["resolve","done",n.Callbacks("once memory"),"resolved"],["reject","fail",n.Callbacks("once memory"),"rejected"],["notify","progress",n.Callbacks("memory")]],c="pending",d={state:function(){return c},always:function(){return e.done(arguments).fail(arguments),this},then:function(){var a=arguments;return n.Deferred(function(c){n.each(b,function(b,f){var g=n.isFunction(a[b])&&a[b];e[f[1]](function(){var a=g&&g.apply(this,arguments);a&&n.isFunction(a.promise)?a.promise().progress(c.notify).done(c.resolve).fail(c.reject):c[f[0]+"With"](this===d?c.promise():this,g?[a]:arguments)})}),a=null}).promise()},promise:function(a){return null!=a?n.extend(a,d):d}},e={};return d.pipe=d.then,n.each(b,function(a,f){var g=f[2],h=f[3];d[f[1]]=g.add,h&&g.add(function(){c=h},b[1^a][2].disable,b[2][2].lock),e[f[0]]=function(){return e[f[0]+"With"](this===e?d:this,arguments),this},e[f[0]+"With"]=g.fireWith}),d.promise(e),a&&a.call(e,e),e},when:function(a){var b=0,c=e.call(arguments),d=c.length,f=1!==d||a&&n.isFunction(a.promise)?d:0,g=1===f?a:n.Deferred(),h=function(a,b,c){return function(d){b[a]=this,c[a]=arguments.length>1?e.call(arguments):d,c===i?g.notifyWith(b,c):--f||g.resolveWith(b,c)}},i,j,k;if(d>1)for(i=new Array(d),j=new Array(d),k=new Array(d);d>b;b++)c[b]&&n.isFunction(c[b].promise)?c[b].promise().progress(h(b,j,i)).done(h(b,k,c)).fail(g.reject):--f;return f||g.resolveWith(k,c),g.promise()}});var I;n.fn.ready=function(a){return n.ready.promise().done(a),this},n.extend({isReady:!1,readyWait:1,holdReady:function(a){a?n.readyWait++:n.ready(!0)},ready:function(a){(a===!0?--n.readyWait:n.isReady)||(n.isReady=!0,a!==!0&&--n.readyWait>0||(I.resolveWith(d,[n]),n.fn.triggerHandler&&(n(d).triggerHandler("ready"),n(d).off("ready"))))}});function J(){d.removeEventListener("DOMContentLoaded",J),a.removeEventListener("load",J),n.ready()}n.ready.promise=function(b){return I||(I=n.Deferred(),"complete"===d.readyState||"loading"!==d.readyState&&!d.documentElement.doScroll?a.setTimeout(n.ready):(d.addEventListener("DOMContentLoaded",J),a.addEventListener("load",J))),I.promise(b)},n.ready.promise();var K=function(a,b,c,d,e,f,g){var h=0,i=a.length,j=null==c;if("object"===n.type(c)){e=!0;for(h in c)K(a,b,h,c[h],!0,f,g)}else if(void 0!==d&&(e=!0,n.isFunction(d)||(g=!0),j&&(g?(b.call(a,d),b=null):(j=b,b=function(a,b,c){return j.call(n(a),c)})),b))for(;i>h;h++)b(a[h],c,g?d:d.call(a[h],h,b(a[h],c)));return e?a:j?b.call(a):i?b(a[0],c):f},L=function(a){return 1===a.nodeType||9===a.nodeType||!+a.nodeType};function M(){this.expando=n.expando+M.uid++}M.uid=1,M.prototype={register:function(a,b){var c=b||{};return a.nodeType?a[this.expando]=c:Object.defineProperty(a,this.expando,{value:c,writable:!0,configurable:!0}),a[this.expando]},cache:function(a){if(!L(a))return{};var b=a[this.expando];return b||(b={},L(a)&&(a.nodeType?a[this.expando]=b:Object.defineProperty(a,this.expando,{value:b,configurable:!0}))),b},set:function(a,b,c){var d,e=this.cache(a);if("string"==typeof b)e[b]=c;else for(d in b)e[d]=b[d];return e},get:function(a,b){return void 0===b?this.cache(a):a[this.expando]&&a[this.expando][b]},access:function(a,b,c){var d;return void 0===b||b&&"string"==typeof b&&void 0===c?(d=this.get(a,b),void 0!==d?d:this.get(a,n.camelCase(b))):(this.set(a,b,c),void 0!==c?c:b)},remove:function(a,b){var c,d,e,f=a[this.expando];if(void 0!==f){if(void 0===b)this.register(a);else{n.isArray(b)?d=b.concat(b.map(n.camelCase)):(e=n.camelCase(b),b in f?d=[b,e]:(d=e,d=d in f?[d]:d.match(G)||[])),c=d.length;while(c--)delete f[d[c]]}(void 0===b||n.isEmptyObject(f))&&(a.nodeType?a[this.expando]=void 0:delete a[this.expando])}},hasData:function(a){var b=a[this.expando];return void 0!==b&&!n.isEmptyObject(b)}};var N=new M,O=new M,P=/^(?:\{[\w\W]*\}|\[[\w\W]*\])$/,Q=/[A-Z]/g;function R(a,b,c){var d;if(void 0===c&&1===a.nodeType)if(d="data-"+b.replace(Q,"-$&").toLowerCase(),c=a.getAttribute(d),"string"==typeof c){try{c="true"===c?!0:"false"===c?!1:"null"===c?null:+c+""===c?+c:P.test(c)?n.parseJSON(c):c;
@@ -488,4 +509,5417 @@ window.addEventListener("load", function(event) {
 if (!window.cssobj) {
     /* cssobj v1.2.1 */
     window.cssobj = function(){"use strict";function e(e){return!isNaN(parseFloat(e))&&isFinite(e)}function t(e,t){return{}.hasOwnProperty.call(e,t)}function n(e,n){e=e||{};for(var r in n)!t(n,r)||r in e||(e[r]=n[r]);return e}function r(e){return e.replace(/[A-Z]/g,function(e){return"-"+e.toLowerCase()})}function o(e){return e.charAt(0).toUpperCase()+e.substr(1)}function a(e,n,r){e[n]=e[n]||{};for(var o=arguments,a=2;a<o.length;a++){r=o[a];for(var i in r)t(r,i)&&(e[n][i]=r[i])}return e[n]}function i(e,t,n,r,o){e[t]=t in e?[].concat(e[t]):[],o&&e[t].indexOf(n)>-1||(r?e[t].unshift(n):e[t].push(n))}function u(e,t,n,r,o){for(var a,u,c=e,f=[];c;){if(t(c)){if(r)for(a=0;a<f.length;a++)i(c,r,f[a],!1,!0);f[0]&&o&&(f[0][o]=c),f.unshift(c)}c=c.parent}for(a=0;a<f.length;a++)u=f[a],f[a]=n?u[n]:u;return f}function c(e,t){if(e.indexOf(t)<0)return[e];for(var n,r=0,o=0,a="",i=0,u=[];n=e.charAt(r);r++)a?n==a&&(a=""):('"'!=n&&"'"!=n||(a=n),"("!=n&&"["!=n||o++,")"!=n&&"]"!=n||o--,o||n!=t||(u.push(e.substring(i,r)),i=r+1));return u.concat(e.substring(i))}function f(e){return"string"==typeof e&&e||"number"==typeof e&&isFinite(e)}function l(e){return O.call(e)==_||O.call(e)==G}function s(e){return"function"==typeof e}function d(e,n,r,o){if(o&&(n.nodes=[],n.ref={},r&&(n.diff={})),r=r||{},r.obj=e,O.call(e)==G){var u=[];r.at=S.exec(r.key);for(var f=0;f<e.length;f++){var v=r[f],m=d(e[f],n,r[f]||{parent:r,src:e,parentNode:u,index:f});n.diff&&v!=m&&i(n.diff,m?"added":"removed",m||v),u.push(m)}return u}var g=r.prevVal=r.lastVal;if(N in e){var y=s(e[N])?e[N](!r.disabled,r,n):e[N];if(!y)return;r.test=y}var E=r.children=r.children||{};r.lastRaw=r.rawVal||{},r.lastVal={},r.rawVal={},r.prop={},r.diff={},e[k]&&(n.ref[e[k]]=r);var R=0|e[C],x=[],b=function(e,t,r){var o=t in E,u=a(E,t,r);u.selPart=u.selPart||c(t,",");var f=d(e,n,u);f&&(E[t]=f),g&&(o?!f&&i(n.diff,"removed",E[t]):f&&i(n.diff,"added",f)),f||delete r.parent.children[t]};"selText"in r||p(r,n);for(var T in e)if(t(e,T))if(!l(e[T])||O.call(e[T])==G&&!l(e[T][0])){if("@"==T[0]){b([].concat(e[T]).reduce(function(e,t){return e[t]=";",e},{}),T,{parent:r,src:e,key:T,inline:!0});continue}var w=function(t){t!=N&&h(r,e,t,n)};R?x.push([w,T]):w(T)}else b(e[T],T,{parent:r,src:e,key:T});if(g){for(T in E)T in e||(i(n.diff,"removed",E[T]),delete E[T]);var P=function(){var e=V(r.lastVal),t=V(g).filter(function(t){return e.indexOf(t)<0});t.length&&(r.diff.removed=t),V(r.diff).length&&i(n.diff,"changed",r)};R?x.push([P,null]):P()}return R&&i(n,"_order",{order:R,func:x}),n.nodes.push(r),r}function p(e,t){var n=t.config,r=u(e,function(e){return e.key}).pop();if(e.parentRule=u(e.parent,function(e){return e.type==$}).pop()||null,r){var o,a=r.key,i=a.match(F);i?(e.type=$,e.at=i.pop(),(o="media"==e.at)&&(e.selPart=c(a.replace(F,""),",")),e.groupText=o?"@"+e.at+v(u(e,function(e){return e.type==$},"selPart","selChild","selParent"),""," and"):a,e.selText=u(e,function(e){return e.selText&&!e.at},"selText").pop()||""):S.test(a)?(e.type="at",e.selText=a):e.selText=""+v(u(r,function(e){return e.selPart&&!e.at},"selPart","selChild","selParent"),""," ",!0),e.selText=m(n,"selector",e.selText,e,t),e.selText&&(e.selTextPart=c(e.selText,",")),e!==r&&(e.ruleNode=r)}}function h(n,r,o,a,u){var c=n.prevVal,d=n.lastVal,p=e(o)?u:o,v=n.lastRaw[p],g=c&&c[p],y={node:n,result:a};v&&(y.raw=v[0]),[].concat(r[o]).forEach(function(e){y.cooked=g,y.raw=v=s(e)?e(y):e;var r=m(a.config,"value",v,p,n,a,u);if(l(r))for(var o in r)t(r,o)&&h(n,r,o,a,p);else i(n.rawVal,p,v,!0),f(r)&&(i(n.prop,p,r,!0),g=d[p]=r)}),c&&(p in c?c[p]!=d[p]&&i(n.diff,"changed",p):i(n.diff,"added",p))}function v(e,t,n,r){return e.length?e[0].reduce(function(o,a){var i,u=t?t+n:t;return r?u=(i=c(a,"&")).length>1?i.join(t):u+a:u+=a,o.concat(v(e.slice(1),u,n,r))},[]):t}function m(e,t){var n=[].slice.call(arguments,2),r=e.plugins;return[].concat(r).reduce(function(e,r){return r[t]?r[t].apply(null,[e].concat(n)):e},n.shift())}function g(e){e._order&&(e._order.sort(function(e,t){return e.order-t.order}).forEach(function(e){e.func.forEach(function(e){e[0](e[1])})}),delete e._order)}function y(e){return e=n(e,{plugins:[],intros:[]}),function(t,n){var r=function(t,n){return arguments.length>1&&(o.state=n||{}),t&&(o.obj=s(t)?t():t),o.root=d(a({},"",o.intro,o.obj),o,o.root,!0),g(o),o=m(e,"post",o),s(e.onUpdate)&&e.onUpdate(o),o},o={intro:{},update:r,config:e};return[].concat(e.intros).forEach(function(e){a(o,"intro",s(e)?e(o):e)}),r(t,n||e.state),o}}function E(e,t,n){var r=e.getElementById(t),o=e.getElementsByTagName("head")[0];if(r){if(n.append)return r;r.parentNode&&r.parentNode.removeChild(r)}if(r=e.createElement("style"),o.appendChild(r),r.setAttribute("id",t),n.attrs)for(var a in n.attrs)r.setAttribute(a,n.attrs[a]);return r}function R(e){var t=e.prop;return Object.keys(t).map(function(n){if("$"==n[0])return"";for(var r,o="",a=t[n].length;a--;)r=t[n][a],o+=e.inline?n:b(n,!0)+":"+r+";";return o})}function x(e){if(!(e in z||"-"==e[0]))for(var t,n=o(e),r=M.length;r--;)if((t=M[r]+n)in z)return t}function b(e,t){if("$"==e[0])return"";var n=B[e]||(B[e]=x(e)||e);return t?r(U.test(n)?o(n):"float"==e&&e||n):n}function T(e,t,n){var r,o=/^(.*)!(important)\s*$/i.exec(n),a=b(t),i=b(t,!0);o?(r=o[1],o=o[2],e.setProperty?e.setProperty(i,r,o):(e[i.toUpperCase()]=n,e.cssText=e.cssText)):e[a]=n}function w(e){function t(e){var t=v.indexOf(e);t>-1&&(e.mediaEnabled=!1,g(e),v.splice(t,1)),[e.omGroup].concat(e.omRule).forEach(p)}(e=e||{}).vendors&&(M=e.vendors);var n=e.id||"cssobj"+A(),r=e.frame,o=r?r.contentDocument||r.contentWindow.document:document,a=E(o,n,e),i=a.sheet||a.styleSheet,u=/page/i,c=function(e){return!!e&&(u.test(e.at)||e.parentRule&&u.test(e.parentRule.at))},f=function(e){var t="omGroup"in e?e:e.parentRule;return t&&t.omGroup||i},l=function(e){return!e.parentRule||null!==e.parentRule.omGroup},s=function(e,t,n){return e.deleteRule?e.deleteRule(t.keyText||n):e.removeRule(n)},d=function(e){for(var t=e.cssRules||e.rules,n=t.length;n--;)s(e,t[n],n)},p=function(e){if(e){var t=e.parentRule||i,n=t.cssRules||t.rules;[].some.call(n,function(n,r){if(n===e)return s(t,e,r),!0})}},h=function(e,t,n){if(n){var r=f(e),o=e.parentRule;if(l(e))return e.omRule=L(r,t,n,e);if(o){if(o.mediaEnabled)return[].concat(e.omRule).forEach(p),e.omRule=L(r,t,n,e);e.omRule&&(e.omRule.forEach(p),delete e.omRule)}}},v=[],m=function(){v.forEach(function(e){e.mediaEnabled=e.mediaTest(o),g(e)})};window.attachEvent?window.attachEvent("onresize",m):window.addEventListener&&window.addEventListener("resize",m,!0);var g=function(t,n){if(t){if(t.constructor===Array)return t.map(function(e){g(e,n)});if((!t.key||"$"!=t.key[0])&&t.prop){if("media"==t.at&&t.selParent&&t.selParent.postArr)return t.selParent.postArr.push(t);t.postArr=[];var r=t.children,a="group"==t.type;if(c(t)&&(n=n||[]),a&&!c(t)){var u=t.obj.$groupTest,f="media"==t.at&&e.media;if(u||f){t.omGroup=null;var s=u||f&&function(n){var r=e.media;return!r||t.selPart.some(function(e){return new RegExp(r,"i").test(e.trim())})}||function(){return!0};try{var d=s(o);t.mediaTest=s,t.mediaEnabled=d,v.push(t)}catch(e){}}else[""].concat(M).some(function(e){return t.omGroup=L(i,"@"+(e?"-"+e.toLowerCase()+"-":e)+t.groupText.slice(1),[],t).pop()||null})}var p=t.selTextPart,m=R(t);m.join("")&&(c(t)||h(t,p,m),n&&n.push(p?p+" {"+m.join("")+"}":m));for(var y in r)""===y?t.postArr.push(r[y]):g(r[y],n);a&&c(t)&&l(t)&&(h(t,t.groupText,n),n=null);var E=t.postArr;delete t.postArr,E.map(function(e){g(e,n)})}}},y=e.media;return{post:function(n){var r=y!=e.media;if(y=e.media,m(),n.cssdom=a,!n.diff||r)r&&(v=[],d(i)),g(n.root);else{var o=n.diff;o.added&&o.added.forEach(function(e){g(e)}),o.removed&&o.removed.forEach(function(e){e.selChild&&e.selChild.forEach(t),t(e)}),o.changed&&o.changed.forEach(function(e){var t=e.omRule,n=e.diff;t||(t=h(e,e.selTextPart,R(e))),[].concat(n.added,n.changed).forEach(function(n){n&&t&&t.forEach(function(t){try{T(t.style,n,e.prop[n][0])}catch(e){}})}),n.removed&&n.removed.forEach(function(e){var n=b(e);n&&t&&t.forEach(function(e){try{e.style.removeProperty?e.style.removeProperty(n):e.style.removeAttribute(n)}catch(e){}})})})}return n}}}function P(e){var t=(e=e||{}).space="string"!=typeof e.space?"function"==typeof e.random?e.random():A():e.space,n=e.localNames=e.localNames||{},r=function(e){return"!"==e[0]?e.substr(1):e in n?n[e]:e+t},o=function(e){for(var t,n,o=c(e,"."),a=o[0],i=1,u=o.length;i<u;i++)(t=o[i])?a+="."+((n=t.search(I))<0?r(t):r(t.substr(0,n))+t.substr(n)):a+=".";return a},a=function(e){return o(e.replace(/\s+\.?/g,".").replace(/^([^:\s.])/i,".$1")).replace(/\./g," ")};return{selector:function(e,r,i){return r.at?e:(i.mapSel||(i.space=t,i.localNames=n,i.mapSel=o,i.mapClass=a),o(e))}}}function j(e,t,n){var r=(t=t||{}).local;return t.local=r?r&&"object"==typeof r?r:{}:{space:""},t.plugins=[].concat(t.plugins||[],P(t.local),w(t.cssom)),y(t)(e,n)}var A=function(){var e=0;return function(t){return e++,"_"+(t||"")+Math.floor(Math.random()*Math.pow(2,32)).toString(36)+e+"_"}}(),k="$id",C="$order",N="$test",$="group",V=Object.keys,O={}.toString,G=O.call([]),_=O.call({}),F=/^@(media|document|supports|page|[\w-]*keyframes)/i,S=/^\s*@/i,L=function(e,t,n,r){var o=/@import/i.test(r.selText),a=e.cssRules||e.rules,i=0,u=[];return(r.inline?n.map(function(e){return[r.selText," ",e]}):[[t,"{",n.join(""),"}"]]).forEach(function(n){if(e.cssRules)try{i=o?0:a.length,e.appendRule?e.appendRule(n.join("")):e.insertRule(n.join(""),i),u.push(a[i])}catch(e){}else e.addRule&&[].concat(t).forEach(function(t){try{o?(i=e.addImport(n[2]),u.push(e.imports[i])):/^\s*@/.test(t)||(e.addRule(t,n[2],a.length),u.push(a[a.length-1]))}catch(e){}})}),u},M=["Webkit","Moz","ms","O"],U=new RegExp("^(?:"+M.join("|")+")[A-Z]"),z=document.createElement("div").style,B={float:function(e){for(var t=e.length;t--;)if(e[t]in z)return e[t]}(["styleFloat","cssFloat","float"])},I=/[ \~\\@$%^&\*\(\)\+\=,/';\:"?><[\]\\{}|`]/;return j.version="1.2.1",j}();
+}
+
+// 3. Boomerang plugins
+function initEmbeddedBoomerang() {
+    if (window.BOOMR && window.BOOMR.version) {
+        return;
+    }
+
+    BOOMR = window.BOOMR || {};
+    BOOMR.window = window;
+    BOOMR.getPerformance = function() {
+        try {
+            if (BOOMR.window) {
+                if ("performance" in BOOMR.window && BOOMR.window.performance) {
+                    return BOOMR.window.performance;
+                }
+
+                // vendor-prefixed fallbacks
+                return BOOMR.window.msPerformance || BOOMR.window.webkitPerformance || BOOMR.window.mozPerformance;
+            }
+        }
+        catch (ignore) {
+            // empty
+        }
+    };
+
+    /**
+    \file restiming.js
+    Plugin to collect metrics from the W3C Resource Timing API.
+    For more information about Resource Timing,
+    see: http://www.w3.org/TR/resource-timing/
+    */
+
+    (function() {
+        var impl;
+
+        BOOMR = window.BOOMR || {};
+        BOOMR.plugins = BOOMR.plugins || {};
+
+        if (BOOMR.plugins.ResourceTiming) {
+            return;
+        }
+
+        //
+        // Constants
+        //
+        var INITIATOR_TYPES = {
+            "other": 0,
+            "img": 1,
+            "link": 2,
+            "script": 3,
+            "css": 4,
+            "xmlhttprequest": 5,
+            "html": 6,
+            // IMAGE element inside a SVG
+            "image": 7,
+            // sendBeacon: https://developer.mozilla.org/en-US/docs/Web/API/Navigator/sendBeacon
+            "beacon": 8,
+            // Fetch API: https://developer.mozilla.org/en-US/docs/Web/API/Fetch_API
+            "fetch": 9
+        };
+
+        // https://html.spec.whatwg.org/multipage/links.html#linkTypes
+        // these are the only `rel` types that _might_ be reference-able from resource-timing
+        var REL_TYPES = {
+            "prefetch": 1,
+            "preload": 2,
+            "prerender": 3,
+            "stylesheet": 4
+        };
+
+        // Words that will be broken (by ensuring the optimized trie doesn't contain
+        // the whole string) in URLs, to ensure NoScript doesn't think this is an XSS attack
+        var DEFAULT_XSS_BREAK_WORDS = [
+            /(h)(ref)/gi,
+            /(s)(rc)/gi,
+            /(a)(ction)/gi
+        ];
+
+        // Delimiter to use to break a XSS word
+        var XSS_BREAK_DELIM = "\n";
+
+        // Maximum number of characters in a URL
+        var DEFAULT_URL_LIMIT = 500;
+
+        // Any ResourceTiming data time that starts with this character is not a time,
+        // but something else (like dimension data)
+        var SPECIAL_DATA_PREFIX = "*";
+
+        // Dimension data special type
+        var SPECIAL_DATA_DIMENSION_TYPE = "0";
+
+        // Dimension data special type
+        var SPECIAL_DATA_SIZE_TYPE = "1";
+
+        // Script attributes
+        var SPECIAL_DATA_SCRIPT_ATTR_TYPE = "2";
+        // The following make up a bitmask
+        var ASYNC_ATTR = 0x1;
+        var DEFER_ATTR = 0x2;
+        var LOCAT_ATTR = 0x4;	// 0 => HEAD, 1 => BODY
+
+        // Dimension data special type
+        var SPECIAL_DATA_SERVERTIMING_TYPE = "3";
+
+        // Link attributes
+        var SPECIAL_DATA_LINK_ATTR_TYPE = "4";
+
+        /**
+         * Converts entries to a Trie:
+         * http://en.wikipedia.org/wiki/Trie
+         *
+         * Assumptions:
+         * 1) All entries have unique keys
+         * 2) Keys cannot have "|" in their name.
+         * 3) All key's values are strings
+         *
+         * Leaf nodes in the tree are the key's values.
+         *
+         * If key A is a prefix to key B, key A will be suffixed with "|"
+         *
+         * @param [object] entries Performance entries
+         * @return A trie
+         */
+        function convertToTrie(entries) {
+            var trie = {}, url, urlFixed, i, value, letters, letter, cur, node;
+
+            for (url in entries) {
+                urlFixed = url;
+
+                // find any strings to break
+                for (i = 0; i < impl.xssBreakWords.length; i++) {
+                    // Add a XSS_BREAK_DELIM character after the first letter.  optimizeTrie will
+                    // ensure this sequence doesn't get combined.
+                    urlFixed = urlFixed.replace(impl.xssBreakWords[i], "$1" + XSS_BREAK_DELIM + "$2");
+                }
+
+                if (!entries.hasOwnProperty(url)) {
+                    continue;
+                }
+
+                value = entries[url];
+                letters = urlFixed.split("");
+                cur = trie;
+
+                for (i = 0; i < letters.length; i++) {
+                    letter = letters[i];
+                    node = cur[letter];
+
+                    if (typeof node === "undefined") {
+                        // nothing exists yet, create either a leaf if this is the end of the word,
+                        // or a branch if there are letters to go
+                        cur = cur[letter] = (i === (letters.length - 1) ? value : {});
+                    }
+                    else if (typeof node === "string") {
+                        // this is a leaf, but we need to go further, so convert it into a branch
+                        cur = cur[letter] = { "|": node };
+                    }
+                    else {
+                        if (i === (letters.length - 1)) {
+                            // this is the end of our key, and we've hit an existing node.  Add our timings.
+                            cur[letter]["|"] = value;
+                        }
+                        else {
+                            // continue onwards
+                            cur = cur[letter];
+                        }
+                    }
+                }
+            }
+
+            return trie;
+        }
+
+        /**
+         * Optimize the Trie by combining branches with no leaf
+         *
+         * @param [object] cur Current Trie branch
+         * @param [boolean] top Whether or not this is the root node
+         */
+        function optimizeTrie(cur, top) {
+            var num = 0, node, ret, topNode;
+
+            // capture trie keys first as we'll be modifying it
+            var keys = [];
+
+            for (node in cur) {
+                if (cur.hasOwnProperty(node)) {
+                    keys.push(node);
+                }
+            }
+
+            for (var i = 0; i < keys.length; i++) {
+                node = keys[i];
+                if (typeof cur[node] === "object") {
+                    // optimize children
+                    ret = optimizeTrie(cur[node], false);
+                    if (ret) {
+                        // swap the current leaf with compressed one
+                        delete cur[node];
+
+                        if (node === XSS_BREAK_DELIM) {
+                            // If this node is a newline, which can't be in a regular URL,
+                            // it's due to the XSS patch.  Remove the placeholder character,
+                            // and make sure this node isn't compressed by incrementing
+                            // num to be greater than one.
+                            node = ret.name;
+                            num++;
+                        }
+                        else {
+                            node = node + ret.name;
+                        }
+                        cur[node] = ret.value;
+                    }
+                }
+                num++;
+            }
+
+            if (num === 1) {
+                // compress single leafs
+                if (top) {
+                    // top node gets special treatment so we're not left with a {node:,value:} at top
+                    topNode = {};
+                    topNode[node] = cur[node];
+                    return topNode;
+                }
+                else {
+                    // other nodes we return name and value separately
+                    return { name: node, value: cur[node] };
+                }
+            }
+            else if (top) {
+                // top node with more than 1 child, return it as-is
+                return cur;
+            }
+            else {
+                // more than two nodes and not the top, we can't compress any more
+                return false;
+            }
+        }
+
+        /**
+         * Trims the timing, returning an offset from the startTime in ms
+         *
+         * @param [number] time Time
+         * @param [number] startTime Start time
+         * @return [number] Number of ms from start time
+         */
+        function trimTiming(time, startTime) {
+            if (typeof time !== "number") {
+                time = 0;
+            }
+
+            if (typeof startTime !== "number") {
+                startTime = 0;
+            }
+
+            // strip from microseconds to milliseconds only
+            var timeMs = Math.round(time ? time : 0),
+                startTimeMs = Math.round(startTime ? startTime : 0);
+
+            return timeMs === 0 ? 0 : (timeMs - startTimeMs);
+        }
+
+        /**
+         * Checks if the current execution context can access the specified frame.
+         *
+         * Note: In Safari, this will still produce a console error message, even
+         * though the exception is caught.
+
+         * @param {Window} frame The frame to check if access can haz
+         * @return {boolean} true if true, false otherwise
+         */
+        function isFrameAccessible(frame) {
+            var dummy;
+
+            try {
+                // Try to access location.href first to trigger any Cross-Origin
+                // warnings.  There's also a bug in Chrome ~48 that might cause
+                // the browser to crash if accessing X-O frame.performance.
+                // https://code.google.com/p/chromium/issues/detail?id=585871
+                // This variable is not otherwise used.
+                dummy = frame.location && frame.location.href;
+
+                // Try to access frame.document to trigger X-O exceptions with that
+                dummy = frame.document;
+
+                if (("performance" in frame) && frame.performance) {
+                    return true;
+                }
+            }
+            catch (e) {
+                // empty
+            }
+
+            return false;
+        }
+
+        /**
+         * Attempts to get the navigationStart time for a frame.
+         * @returns navigationStart time, or 0 if not accessible
+         */
+        function getNavStartTime(frame) {
+            var navStart = 0;
+
+            if (isFrameAccessible(frame) && frame.performance.timing && frame.performance.timing.navigationStart) {
+                navStart = frame.performance.timing.navigationStart;
+            }
+
+            return navStart;
+        }
+
+        /**
+         * Gets all of the performance entries for a frame and its subframes
+         *
+         * @param {Frame} frame Frame
+         * @param {boolean} top This is the top window
+         * @param {string} offset Offset in timing from root IFRAME
+         * @param {number} depth Recursion depth
+         * @param {number[]} [frameDims] position and size of the frame if it is visible as returned by getVisibleEntries
+         * @return {PerformanceEntry[]} Performance entries
+         */
+        function findPerformanceEntriesForFrame(frame, isTopWindow, offset, depth, frameDims) {
+            var entries = [], i, navEntries, navStart, frameNavStart, frameOffset, subFrames, subFrameDims,
+                navEntry, t, rtEntry, visibleEntries, scripts = {}, links = {}, a;
+
+            if (typeof isTopWindow === "undefined") {
+                isTopWindow = true;
+            }
+
+            if (typeof offset === "undefined") {
+                offset = 0;
+            }
+
+            if (typeof depth === "undefined") {
+                depth = 0;
+            }
+
+            if (depth > 10) {
+                return entries;
+            }
+
+            try {
+                if (!isFrameAccessible(frame)) {
+                    return entries;
+                }
+
+                navStart = getNavStartTime(frame);
+
+                // gather visible entries on the page
+                visibleEntries = getVisibleEntries(frame, frameDims);
+
+                a = frame.document.createElement("a");
+
+                // get all scripts as an object keyed on script.src
+                collectResources(a, scripts, "script");
+                collectResources(a, links, "link");
+
+                subFrames = frame.document.getElementsByTagName("iframe");
+
+                // get sub-frames' entries first
+                if (subFrames && subFrames.length) {
+                    for (i = 0; i < subFrames.length; i++) {
+                        frameNavStart = getNavStartTime(subFrames[i].contentWindow);
+                        frameOffset = 0;
+                        if (frameNavStart > navStart) {
+                            frameOffset = offset + (frameNavStart - navStart);
+                        }
+
+                        a.href = subFrames[i].src;	// Get canonical URL
+
+                        entries = entries.concat(findPerformanceEntriesForFrame(subFrames[i].contentWindow, false, frameOffset, depth + 1, visibleEntries[a.href]));
+                    }
+                }
+
+                if (typeof frame.performance.getEntriesByType !== "function") {
+                    return entries;
+                }
+
+                function readServerTiming(entry) {
+                    return (impl.serverTiming && entry.serverTiming) || [];
+                }
+
+                // add an entry for the top page
+                if (isTopWindow) {
+                    navEntries = frame.performance.getEntriesByType("navigation");
+                    if (navEntries && navEntries.length === 1) {
+                        navEntry = navEntries[0];
+
+                        // replace document with the actual URL
+                        entries.push({
+                            name: frame.location.href,
+                            startTime: 0,
+                            initiatorType: "html",
+                            redirectStart: navEntry.redirectStart,
+                            redirectEnd: navEntry.redirectEnd,
+                            fetchStart: navEntry.fetchStart,
+                            domainLookupStart: navEntry.domainLookupStart,
+                            domainLookupEnd: navEntry.domainLookupEnd,
+                            connectStart: navEntry.connectStart,
+                            secureConnectionStart: navEntry.secureConnectionStart,
+                            connectEnd: navEntry.connectEnd,
+                            requestStart: navEntry.requestStart,
+                            responseStart: navEntry.responseStart,
+                            responseEnd: navEntry.responseEnd,
+                            workerStart: navEntry.workerStart,
+                            encodedBodySize: navEntry.encodedBodySize,
+                            decodedBodySize: navEntry.decodedBodySize,
+                            transferSize: navEntry.transferSize,
+                            serverTiming: readServerTiming(navEntry)
+                        });
+                    }
+                    else if (frame.performance.timing) {
+                        // add a fake entry from the timing object
+                        t = frame.performance.timing;
+
+                        //
+                        // Avoid browser bugs:
+                        // 1. navigationStart being 0 in some cases
+                        // 2. responseEnd being ~2x what navigationStart is
+                        //    (ensure the end is within 60 minutes of start)
+                        //
+                        if (t.navigationStart !== 0 &&
+                            t.responseEnd <= (t.navigationStart + (60 * 60 * 1000))) {
+                            entries.push({
+                                name: frame.location.href,
+                                startTime: 0,
+                                initiatorType: "html",
+                                redirectStart: t.redirectStart ? (t.redirectStart - t.navigationStart) : 0,
+                                redirectEnd: t.redirectEnd ? (t.redirectEnd - t.navigationStart) : 0,
+                                fetchStart: t.fetchStart ? (t.fetchStart - t.navigationStart) : 0,
+                                domainLookupStart: t.domainLookupStart ? (t.domainLookupStart - t.navigationStart) : 0,
+                                domainLookupEnd: t.domainLookupEnd ? (t.domainLookupEnd - t.navigationStart) : 0,
+                                connectStart: t.connectStart ? (t.connectStart - t.navigationStart) : 0,
+                                secureConnectionStart: t.secureConnectionStart ? (t.secureConnectionStart - t.navigationStart) : 0,
+                                connectEnd: t.connectEnd ? (t.connectEnd - t.navigationStart) : 0,
+                                requestStart: t.requestStart ? (t.requestStart - t.navigationStart) : 0,
+                                responseStart: t.responseStart ? (t.responseStart - t.navigationStart) : 0,
+                                responseEnd: t.responseEnd ? (t.responseEnd - t.navigationStart) : 0
+                            });
+                        }
+                    }
+                }
+
+                // offset all of the entries by the specified offset for this frame
+                var frameEntries = frame.performance.getEntriesByType("resource"),
+                    frameFixedEntries = [];
+
+                for (i = 0; frameEntries && i < frameEntries.length; i++) {
+                    t = frameEntries[i];
+                    rtEntry = {
+                        name: t.name,
+                        initiatorType: t.initiatorType,
+                        startTime: t.startTime + offset,
+                        redirectStart: t.redirectStart ? (t.redirectStart + offset) : 0,
+                        redirectEnd: t.redirectEnd ? (t.redirectEnd + offset) : 0,
+                        fetchStart: t.fetchStart ? (t.fetchStart + offset) : 0,
+                        domainLookupStart: t.domainLookupStart ? (t.domainLookupStart + offset) : 0,
+                        domainLookupEnd: t.domainLookupEnd ? (t.domainLookupEnd + offset) : 0,
+                        connectStart: t.connectStart ? (t.connectStart + offset) : 0,
+                        secureConnectionStart: t.secureConnectionStart ? (t.secureConnectionStart + offset) : 0,
+                        connectEnd: t.connectEnd ? (t.connectEnd + offset) : 0,
+                        requestStart: t.requestStart ? (t.requestStart + offset) : 0,
+                        responseStart: t.responseStart ? (t.responseStart + offset) : 0,
+                        responseEnd: t.responseEnd ? (t.responseEnd + offset) : 0,
+                        workerStart: t.workerStart ? (t.workerStart + offset) : 0,
+                        encodedBodySize: t.encodedBodySize,
+                        decodedBodySize: t.decodedBodySize,
+                        transferSize: t.transferSize,
+                        serverTiming: readServerTiming(t),
+                        visibleDimensions: visibleEntries[t.name],
+                        latestTime: getResourceLatestTime(t)
+                    };
+
+                    // If this is a script, set its flags
+                    if ((t.initiatorType === "script" || t.initiatorType === "link") && scripts[t.name]) {
+                        var s = scripts[t.name];
+
+                        // Add async & defer based on attribute values
+                        rtEntry.scriptAttrs = (s.async ? ASYNC_ATTR : 0) | (s.defer ? DEFER_ATTR : 0);
+
+                        while (s.nodeType === 1 && s.nodeName !== "BODY") {
+                            s = s.parentNode;
+                        }
+
+                        // Add location by traversing up the tree until we either hit BODY or document
+                        rtEntry.scriptAttrs |= (s.nodeName === "BODY" ? LOCAT_ATTR : 0);
+                    }
+
+                    // If this is a link, set its flags
+                    if (t.initiatorType === "link" && links[t.name]) {
+                        // split on ASCII whitespace
+                        links[t.name].rel.split(/[\u0009\u000A\u000C\u000D\u0020]+/).find(function(rel) { //eslint-disable-line no-loop-func
+                            // `rel`s are case insensitive
+                            rel = rel.toLowerCase();
+
+                            // only report the `rel` if it's from the known list
+                            if (REL_TYPES[rel]) {
+                                rtEntry.linkAttrs = REL_TYPES[rel];
+                                return true;
+                            }
+                        });
+                    }
+
+                    frameFixedEntries.push(rtEntry);
+                }
+
+                entries = entries.concat(frameFixedEntries);
+            }
+            catch (e) {
+                return entries;
+            }
+
+            return entries;
+        }
+
+        /**
+         * Collect external resources by tagName
+         *
+         * @param [Element] a an anchor element
+         * @param [Object] obj object of resources where the key is the url
+         * @param [string] tagName tag name to collect
+         */
+        function collectResources(a, obj, tagName) {
+            Array.prototype
+                .forEach
+                .call(a.ownerDocument.getElementsByTagName(tagName), function(r) {
+                    // Get canonical URL
+                    a.href = r.src || r.href;
+
+                    // only get external resource
+                    if (a.href.match(/^https?:\/\//)) {
+                        obj[a.href] = r;
+                    }
+                });
+        }
+
+        /**
+         * Converts a number to base-36.
+         *
+         * If not a number or a string, or === 0, return "". This is to facilitate
+         * compression in the timing array, where "blanks" or 0s show as a series
+         * of trailing ",,,," that can be trimmed.
+         *
+         * If a string, return a string.
+         *
+         * @param [number] n Number
+         * @return Base-36 number, empty string, or string
+         */
+        function toBase36(n) {
+            return (typeof n === "number" && n !== 0) ?
+                n.toString(36) :
+                (typeof n === "string" ? n : "");
+        }
+
+        /**
+         * Finds all remote resources in the selected window that are visible, and returns an object
+         * keyed by the url with an array of height,width,top,left as the value
+         *
+         * @param {Window} win Window to search
+         * @param {number[]} [winDims] position and size of the window if it is an embedded iframe in the format returned by this function
+         * @return {Object} Object with URLs of visible assets as keys, and Array[height, width, top, left, naturalHeight, naturalWidth] as value
+         */
+        function getVisibleEntries(win, winDims) {
+            // lower-case tag names should be used: https://developer.mozilla.org/en-US/docs/Web/API/Element/getElementsByTagName
+            var els = ["img", "iframe", "image"], entries = {}, x, y, doc = win.document, a = doc.createElement("A");
+
+            winDims = winDims || [0, 0, 0, 0];
+
+            // https://developer.mozilla.org/en-US/docs/Web/API/Window/scrollX
+            // https://developer.mozilla.org/en-US/docs/Web/API/Element/getBoundingClientRect
+            x = winDims[3] + (win.pageXOffset !== undefined) ? win.pageXOffset : (doc.documentElement || doc.body.parentNode || doc.body).scrollLeft;
+            y = winDims[2] + (win.pageYOffset !== undefined) ? win.pageYOffset : (doc.documentElement || doc.body.parentNode || doc.body).scrollTop;
+
+            // look at each IMG and IFRAME
+            els.forEach(function(elname) {
+                var elements = doc.getElementsByTagName(elname), el, i, rect, src;
+
+                for (i = 0; i < elements.length; i++) {
+                    el = elements[i];
+
+                    // look at this element if it has a src attribute or xlink:href, and we haven't already looked at it
+                    if (el) {
+                        // src = IMG, IFRAME
+                        // xlink:href = svg:IMAGE
+                        src = el.src || el.getAttribute("src") || el.getAttribute("xlink:href");
+
+                        // change src to be relative
+                        a.href = src;
+                        src = a.href;
+
+                        if (src && !entries[src]) {
+                            rect = el.getBoundingClientRect();
+
+                            // Require both height & width to be non-zero
+                            // IE <= 8 does not report rect.height/rect.width so we need offsetHeight & width
+                            if ((rect.height || el.offsetHeight) && (rect.width || el.offsetWidth)) {
+                                entries[src] = [
+                                    rect.height || el.offsetHeight,
+                                    rect.width || el.offsetWidth,
+                                    Math.round(rect.top + y),
+                                    Math.round(rect.left + x)
+                                ];
+
+                                // If this is an image, it has a naturalHeight & naturalWidth
+                                // if these are different from its display height and width, we should report that
+                                // because it indicates scaling in HTML
+                                if ((el.naturalHeight || el.naturalWidth) && (entries[src][0] !== el.naturalHeight || entries[src][1] !== el.naturalWidth)) {
+                                    entries[src].push(el.naturalHeight, el.naturalWidth);
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            return entries;
+        }
+
+        /**
+         * Gathers a filtered list of performance entries.
+         * @param [number] from Only get timings from
+         * @param [number] to Only get timings up to
+         * @param [string[]] initiatorTypes Array of initiator types
+         * @return [ResourceTiming[]] Matching ResourceTiming entries
+         */
+        function getFilteredResourceTiming(from, to, initiatorTypes) {
+            var entries = findPerformanceEntriesForFrame(BOOMR.window, true, 0, 0),
+                i, e, results = {}, initiatorType, url, data,
+                navStart = getNavStartTime(BOOMR.window), countCollector = {};
+
+            if (!entries || !entries.length) {
+                return {
+                    entries: []
+                };
+            }
+
+            // sort entries by start time
+            entries.sort(function(a, b) {
+                return a.startTime - b.startTime;
+            });
+
+            var filteredEntries = [];
+            for (i = 0; i < entries.length; i++) {
+                e = entries[i];
+
+                // skip non-resource URLs
+                if (e.name.indexOf("about:") === 0 ||
+                    e.name.indexOf("javascript:") === 0 ||
+                    e.name.indexOf("res:") === 0) {
+                    continue;
+                }
+
+                // skip boomerang.js and config URLs
+                if (e.name.indexOf(BOOMR.url) > -1 ||
+                    e.name.indexOf(BOOMR.config_url) > -1 ||
+                    (typeof BOOMR.getBeaconURL === "function" && BOOMR.getBeaconURL() && e.name.indexOf(BOOMR.getBeaconURL()) > -1)) {
+                    continue;
+                }
+
+                // if the user specified a "from" time, skip resources that started before then
+                if (from && (navStart + e.startTime) < from) {
+                    continue;
+                }
+
+                // if we were given a final timestamp, don't add any resources that started after it
+                if (to && (navStart + e.startTime) > to) {
+                    // We can also break at this point since the array is time sorted
+                    break;
+                }
+
+                // if given an array of initiatorTypes to include, skip anything else
+                if (typeof initiatorTypes !== "undefined" && initiatorTypes !== "*" && initiatorTypes.length) {
+                    if (!e.initiatorType || !BOOMR.utils.inArray(e.initiatorType, initiatorTypes)) {
+                        continue;
+                    }
+                }
+
+                accumulateServerTimingEntries(countCollector, e.serverTiming);
+                filteredEntries.push(e);
+            }
+
+            var lookup = compressServerTiming(countCollector);
+            return {
+                entries: filteredEntries,
+                serverTiming: {
+                    lookup: lookup,
+                    indexed: indexServerTiming(lookup)
+                }
+            };
+        }
+
+        /**
+         * Gets compressed content and transfer size information, if available
+         *
+         * @param [ResourceTiming] resource ResourceTiming object
+         *
+         * @returns [string] Compressed data (or empty string, if not available)
+         */
+        function compressSize(resource) {
+            var sTrans, sEnc, sDec, sizes;
+
+            // check to see if we can add content sizes
+            if (resource.encodedBodySize ||
+                resource.decodedBodySize ||
+                resource.transferSize) {
+                //
+                // transferSize: how many bytes were over the wire. It can be 0 in the case of X-O,
+                // or if it was fetched from a cache.
+                //
+                // encodedBodySize: the size after applying encoding (e.g. gzipped size).  It is 0 if X-O.
+                //
+                // decodedBodySize: the size after removing encoding (e.g. the original content size).  It is 0 if X-O.
+                //
+                // Here are the possible combinations of values: [encodedBodySize, transferSize, decodedBodySize]
+                //
+                // Cross-Origin resources w/out Timing-Allow-Origin set: [0, 0, 0] -> [0, 0, 0] -> [empty]
+                // 204: [0, t, 0] -> [0, t, 0] -> [e, t-e] -> [, t]
+                // 304: [e, t: t <=> e, d: d>=e] -> [e, t-e, d-e]
+                // 200 non-gzipped: [e, t: t>=e, d: d=e] -> [e, t-e]
+                // 200 gzipped: [e, t: t>=e, d: d>=e] -> [e, t-e, d-e]
+                // retrieved from cache non-gzipped: [e, 0, d: d=e] -> [e]
+                // retrieved from cache gzipped: [e, 0, d: d>=e] -> [e, _, d-e]
+                //
+                sTrans = resource.transferSize;
+                sEnc = resource.encodedBodySize;
+                sDec = resource.decodedBodySize;
+
+                // convert to an array
+                sizes = [sEnc, sTrans ? sTrans - sEnc : "_", sDec ? sDec - sEnc : 0];
+
+                // change everything to base36 and remove any trailing ,s
+                return sizes.map(toBase36).join(",").replace(/,+$/, "");
+            }
+            else {
+                return "";
+            }
+        }
+
+        /* BEGIN_DEBUG */
+        /**
+         * Decompresses size information back into the specified resource
+         *
+         * @param [string] compressed Compressed string
+         * @param [ResourceTiming] resource ResourceTiming object
+         */
+        function decompressSize(compressed, resource) {
+            var split, i;
+
+            if (typeof resource === "undefined") {
+                resource = {};
+            }
+
+            split = compressed.split(",");
+
+            for (i = 0; i < split.length; i++) {
+                if (split[i] === "_") {
+                    // special non-delta value
+                    split[i] = 0;
+                }
+                else {
+                    // fill in missing numbers
+                    if (split[i] === "") {
+                        split[i] = 0;
+                    }
+
+                    // convert back from Base36
+                    split[i] = parseInt(split[i], 36);
+
+                    if (i > 0) {
+                        // delta against first number
+                        split[i] += split[0];
+                    }
+                }
+            }
+
+            // fill in missing
+            if (split.length === 1) {
+                // transferSize is a delta from encodedSize
+                split.push(split[0]);
+            }
+
+            if (split.length === 2) {
+                // decodedSize is a delta from encodedSize
+                split.push(split[0]);
+            }
+
+            // re-add attributes to the resource
+            resource.encodedBodySize = split[0];
+            resource.transferSize = split[1];
+            resource.decodedBodySize = split[2];
+
+            return resource;
+        }
+
+        /**
+         * Decompress compressed timepoints into a timepoint object with painted and finalized pixel counts
+         * @param {string} comp The compressed timePoint object returned by getOptimizedTimepoints
+         * @return {object} An object in the form { <timePoint>: [ <pixel count>, <finalized pixel count>], ... }
+         */
+        function decompressTimePoints(comp) {
+            var result = {}, timePoints, i, split, prevs = [0, 0, 0];
+
+            timePoints = comp.split("!");
+
+            for (i = 0; i < timePoints.length; i++) {
+                split = timePoints[i]
+                    .replace(/^~/, "Infinity~")
+                    .replace("-", "~0~")
+                    .split("~")
+                    .map(function(v, j) {
+                        v = (v === "Infinity" ? Infinity : parseInt(v, 36));
+
+                        if (j === 2) {
+                            v = prevs[1] - v;
+                        }
+                        else {
+                            v = v + prevs[j];
+                        }
+
+                        prevs[j] = v;
+
+                        return v;
+                    });
+
+                result[split[0]] = [ split[1], split[2] || split[1] ];
+            }
+
+            return result;
+        }
+        /* END_DEBUG */
+
+        /**
+         * Trims the URL according to the specified URL trim patterns,
+         * then applies a length limit.
+         *
+         * @param {string} url URL to trim
+         * @param {string} urlsToTrim List of URLs (strings or regexs) to trim
+         * @return {string} Trimmed URL
+         */
+        function trimUrl(url, urlsToTrim) {
+            var i, urlIdx, trim;
+
+            if (url && urlsToTrim) {
+                // trim the payload from any of the specified URLs
+                for (i = 0; i < urlsToTrim.length; i++) {
+                    trim = urlsToTrim[i];
+
+                    if (typeof trim === "string") {
+                        urlIdx = url.indexOf(trim);
+                        if (urlIdx !== -1) {
+                            url = url.substr(0, urlIdx + trim.length) + "...";
+                            break;
+                        }
+                    }
+                    else if (trim instanceof RegExp) {
+                        if (trim.test(url)) {
+                            // replace the URL with the first capture group
+                            url = url.replace(trim, "$1") + "...";
+                        }
+                    }
+                }
+            }
+
+            // apply limits
+            return BOOMR.utils.cleanupURL(url, impl.urlLimit);
+        }
+
+        /**
+         * Get the latest timepoint for this resource from ResourceTiming. If the resource hasn't started downloading yet, return Infinity
+         * @param {PerformanceResourceEntry} res The resource entry to get the latest time for
+         * @return {number} latest timepoint for the resource or now if the resource is still in progress
+         */
+        function getResourceLatestTime(res) {
+            // If responseEnd is non zero, return it
+            if (res.responseEnd) {
+                return res.responseEnd;
+            }
+
+            // If responseStart is non zero, assume it accounts for 80% of the load time, and bump it by 20%
+            if (res.responseStart && res.startTime) {
+                return res.responseStart + (res.responseStart - res.startTime) * 0.2;
+            }
+
+            // If the resource hasn't even started loading, assume it will come at some point in the distant future (after the beacon)
+            // we'll let the server determine what to do
+            return Infinity;
+        }
+
+        /**
+         * Given a 2D array representing the screen and a list of rectangular dimension tuples, turn on the screen pixels that match the dimensions.
+         * Previously set pixels that are also set with the current call will be overwritten with the new value of pixelValue
+         * @param {number[][]} currentPixels A 2D sparse array of numbers representing set pixels or undefined if no pixels are currently set.
+         * @param {number[][]} dimList A list of rectangular dimension tuples in the form [height, width, top, left] for resources to be painted on the virtual screen
+         * @param {number} pixelValue The numeric value to set all new pixels to
+         * @return {number[][]} An updated version of currentPixels.
+         */
+        function mergePixels(currentPixels, dimList, pixelValue) {
+            var s = BOOMR.window.screen,
+                h = s.height, w = s.width;
+
+            return dimList.reduce(
+                function(acc, val) {
+                    var x_min, x_max,
+                        y_min, y_max,
+                        x, y;
+
+                    x_min = Math.max(0, val[3]);
+                    y_min = Math.max(0, val[2]);
+                    x_max = Math.min(val[3] + val[1], w);
+                    y_max = Math.min(val[2] + val[0], h);
+
+                    // Object is off-screen
+                    if (x_min >= x_max || y_min >= y_max) {
+                        return acc;
+                    }
+
+                    // We fill all pixels of this resource with a true
+                    // this is needed to correctly account for overlapping resources
+                    for (y = y_min; y < y_max; y++) {
+                        if (!acc[y]) {
+                            acc[y] = [];
+                        }
+
+                        for (x = x_min; x < x_max; x++) {
+                            acc[y][x] = pixelValue;
+                        }
+                    }
+
+                    return acc;
+                },
+                currentPixels || []
+            );
+        }
+
+        /**
+         * Counts the number of pixels that are set in the given 2D array representing the screen
+         * @param {number[][]} pixels A 2D boolean array representing the screen with painted pixels set to true
+         * @param {number} [rangeMin] If included, will only count pixels >= this value
+         * @param {number} [rangeMax] If included, will only count pixels <= this value
+         * @return {number} The number of pixels set in the passed in array
+         */
+        function countPixels(pixels, rangeMin, rangeMax) {
+            rangeMin = rangeMin || 0;
+            rangeMax = rangeMax || Infinity;
+
+            return pixels
+                .reduce(function(acc, val) {
+                    return acc +
+                        val.filter(function(v) {
+                            return rangeMin <= v && v <= rangeMax;
+                        }).length;
+                },
+                0
+            );
+        }
+
+        /**
+         * Returns a compressed string representation of a hash of timepoints to painted pixel count and finalized pixel count.
+         * - Timepoints are reduced to milliseconds relative to the previous timepoint while pixel count is reduced to pixels relative to the previous timepoint. Finalized pixels are reduced to be relative (negated) to full pixels for that timepoint
+         * - The relative timepoint and relative pixels are then each Base36 encoded and combined with a ~
+         * - Finally, the list of timepoints is merged, separated by ! and returned
+         * @param {object} timePoints An object in the form { "<timePoint>" : [ <object dimensions>, <object dimensions>, ...], <timePoint>: [...], ...}, where <object dimensions> is [height, width, top, left]
+         * @return {string} The serialized compressed timepoint object with ! separating individual triads and ~ separating timepoint and pixels within the triad. The elements of the triad are the timePoint, number of pixels painted at that point, and the number of pixels finalized at that point (ie, no further paints). If the third part of the triad is 0, it is omitted, if the second part of the triad is 0, it is omitted and the repeated ~~ is replaced with a -
+         */
+        function getOptimizedTimepoints(timePoints) {
+            var i, roundedTimePoints = {}, timeSequence, tPixels,
+                t_prev, t, p_prev, p, f_prev, f,
+                comp, result = [];
+
+            // Round timepoints to the nearest integral ms
+            timeSequence = Object.keys(timePoints);
+
+            for (i = 0; i < timeSequence.length; i++) {
+                t = Math.round(Number(timeSequence[i]));
+                if (typeof roundedTimePoints[t] === "undefined") {
+                    roundedTimePoints[t] = [];
+                }
+
+                // Merge
+                Array.prototype.push.apply(roundedTimePoints[t], timePoints[timeSequence[i]]);
+            }
+
+            // Get all unique timepoints nearest ms sorted in ascending order
+            timeSequence = Object.keys(roundedTimePoints).map(Number).sort(function(a, b) { return a - b; });
+
+            if (timeSequence.length === 0) {
+                return {};
+            }
+
+            // First loop identifies pixel first paints
+            for (i = 0; i < timeSequence.length; i++) {
+                t = timeSequence[i];
+                tPixels = mergePixels(tPixels, roundedTimePoints[t], t);
+
+                p = countPixels(tPixels);
+                timeSequence[i] = [t, p];
+            }
+
+            // We'll make all times and pixel counts relative to the previous ones
+            t_prev = 0;
+            p_prev = 0;
+            f_prev = 0;
+
+            // Second loop identifies pixel final paints
+            for (i = 0; i < timeSequence.length; i++) {
+                t = timeSequence[i][0];
+                p = timeSequence[i][1];
+                f = countPixels(tPixels, 0, t);
+
+                if (p > p_prev || f > f_prev) {
+                    comp = (t === Infinity ? "" : toBase36(Math.round(t - t_prev))) + "~" + toBase36(p - p_prev) + "~" + toBase36(p - f);
+
+                    comp = comp.replace(/~~/, "-").replace(/~$/, "");
+
+                    result.push(comp);
+
+                    t_prev = t;
+                    p_prev = p;
+                    f_prev = f;
+                }
+            }
+
+            return result.join("!").replace(/!+$/, "");
+        }
+
+        /**
+         * Gathers performance entries and compresses the result.
+         * @param [number] from Only get timings from
+         * @param [number] to Only get timings up to
+         * @return An object containing the optimized performance entries trie and the optimized server timing lookup
+         */
+        function getCompressedResourceTiming(from, to) {
+            /*eslint no-script-url:0*/
+            var i, e, results = {}, initiatorType, url, data, timePoints = {};
+            var ret = getFilteredResourceTiming(from, to, impl.trackedResourceTypes);
+            var entries = ret.entries, serverTiming = ret.serverTiming;
+
+            if (!entries || !entries.length) {
+                return {
+                    restiming: {},
+                    servertiming: []
+                };
+            }
+
+            for (i = 0; i < entries.length; i++) {
+                e = entries[i];
+
+                //
+                // Compress the RT data into a string:
+                //
+                // 1. Start with the initiator type, which is mapped to a number.
+                // 2. Put the timestamps into an array in a set order (reverse chronological order),
+                //    which pushes timestamps that are more likely to be zero (duration since
+                //    startTime) towards the end of the array (eg redirect* and domainLookup*).
+                // 3. Convert these timestamps to Base36, with empty or zero times being an empty string
+                // 4. Join the array on commas
+                // 5. Trim all trailing empty commas (eg ",,,")
+                //
+
+                // prefix initiatorType to the string
+                initiatorType = INITIATOR_TYPES[e.initiatorType];
+                if (typeof initiatorType === "undefined") {
+                    initiatorType = 0;
+                }
+
+                data = initiatorType + [
+                    trimTiming(e.startTime, 0),
+                    trimTiming(e.responseEnd, e.startTime),
+                    trimTiming(e.responseStart, e.startTime),
+                    trimTiming(e.requestStart, e.startTime),
+                    trimTiming(e.connectEnd, e.startTime),
+                    trimTiming(e.secureConnectionStart, e.startTime),
+                    trimTiming(e.connectStart, e.startTime),
+                    trimTiming(e.domainLookupEnd, e.startTime),
+                    trimTiming(e.domainLookupStart, e.startTime),
+                    trimTiming(e.redirectEnd, e.startTime),
+                    trimTiming(e.redirectStart, e.startTime)
+                ].map(toBase36).join(",").replace(/,+$/, ""); // this `replace()` removes any trailing commas
+
+                // add content and transfer size info
+                var compSize = compressSize(e);
+                if (compSize !== "") {
+                    data += SPECIAL_DATA_PREFIX + SPECIAL_DATA_SIZE_TYPE + compSize;
+                }
+
+                if (e.hasOwnProperty("scriptAttrs")) {
+                    data += SPECIAL_DATA_PREFIX + SPECIAL_DATA_SCRIPT_ATTR_TYPE + e.scriptAttrs;
+                }
+
+                if (e.serverTiming && e.serverTiming.length) {
+                    data += SPECIAL_DATA_PREFIX + SPECIAL_DATA_SERVERTIMING_TYPE +
+                        e.serverTiming.reduce(function(stData, entry, entryIndex) {
+                            // The numeric of the entry is `value` for Chrome 61, `duration` after that
+                            var duration = String(typeof entry.duration !== "undefined" ? entry.duration : entry.value);
+                            if (duration.substring(0, 2) === "0.") {
+                                // lop off the leading 0
+                                duration = duration.substring(1);
+                            }
+                            // The name of the entry is `metric` for Chrome 61, `name` after that
+                            var name = entry.name || entry.metric;
+                            var lookupKey = identifyServerTimingEntry(serverTiming.indexed[name].index,
+                                serverTiming.indexed[name].descriptions[entry.description]);
+                            stData += (entryIndex > 0 ? "," : "") + duration + lookupKey;
+                            return stData;
+                        }, "");
+                }
+
+
+                if (e.hasOwnProperty("linkAttrs")) {
+                    data += SPECIAL_DATA_PREFIX + SPECIAL_DATA_LINK_ATTR_TYPE + e.linkAttrs;
+                }
+
+                url = trimUrl(e.name, impl.trimUrls);
+
+                // if this entry already exists, add a pipe as a separator
+                if (results[url] !== undefined) {
+                    results[url] += "|" + data;
+                }
+                else if (e.visibleDimensions) {
+                    // We use * as an additional separator to indicate it is not a new resource entry
+                    // The following characters will not be URL encoded:
+                    // *!-.()~_ but - and . are special to number representation so we don't use them
+                    // After the *, the type of special data (ResourceTiming = 0) is added
+                    results[url] =
+                        SPECIAL_DATA_PREFIX +
+                        SPECIAL_DATA_DIMENSION_TYPE +
+                        e.visibleDimensions.map(Math.round).map(toBase36).join(",").replace(/,+$/, "") +
+                        "|" +
+                        data;
+                }
+                else {
+                    results[url] = data;
+                }
+
+                if (e.visibleDimensions) {
+                    if (!timePoints[e.latestTime]) {
+                        timePoints[e.latestTime] = [];
+                    }
+                    timePoints[e.latestTime].push(e.visibleDimensions);
+                }
+            }
+
+            return {
+                restiming: optimizeTrie(convertToTrie(results), true),
+                servertiming: serverTiming.lookup
+            };
+        }
+
+        /**
+         * Compresses an array of ResourceTiming-like objects (those with a fetchStart
+         * and a responseStart/responseEnd) by reducing multiple objects with the same
+         * fetchStart down to a single object with the longest duration.
+         *
+         * Array must be pre-sorted by fetchStart, then by responseStart||responseEnd
+         *
+         * @param [ResourceTiming[]] resources ResourceTiming-like resources, with just
+         *  a fetchStart and responseEnd
+         *
+         * @returns Duration, in milliseconds
+         */
+        function reduceFetchStarts(resources) {
+            var times = [];
+
+            if (!resources || !resources.length) {
+                return times;
+            }
+
+            for (var i = 0; i < resources.length; i++) {
+                var res = resources[i];
+
+                // if there is a subsequent resource with the same fetchStart, use
+                // its value instead (since pre-sort guarantee is that it's end
+                // will be >= this one)
+                if (i !== resources.length - 1 &&
+                    res.fetchStart === resources[i + 1].fetchStart) {
+                    continue;
+                }
+
+                // track just the minimum fetchStart and responseEnd
+                times.push({
+                    fetchStart: res.fetchStart,
+                    responseEnd: res.responseStart || res.responseEnd
+                });
+            }
+
+            return times;
+        }
+
+        /**
+         * Calculates the union of durations of the specified resources.  If
+         * any resources overlap, those timeslices are not double-counted.
+         *
+         * @param [ResourceTiming[]] resources Resources
+         *
+         * @returns Duration, in milliseconds
+         */
+        function calculateResourceTimingUnion(resources) {
+            var i;
+
+            if (!resources || !resources.length) {
+                return 0;
+            }
+
+            // First, sort by start time, then end time
+            resources.sort(function(a, b) {
+                if (a.fetchStart !== b.fetchStart) {
+                    return a.fetchStart - b.fetchStart;
+                }
+                else {
+                    var ae = a.responseStart || a.responseEnd;
+                    var be = b.responseStart || b.responseEnd;
+
+                    return ae - be;
+                }
+            });
+
+            // Next, find all resources with the same start time, and reduce
+            // them to the largest end time.
+            var times = reduceFetchStarts(resources);
+
+            // Third, for every resource, if the start is less than the end of
+            // any previous resource, change its start to the end.  If the new start
+            // time is more than the end time, we can discard this one.
+            var times2 = [];
+            var furthestEnd = 0;
+
+            for (i = 0; i < times.length; i++) {
+                var res = times[i];
+
+                if (res.fetchStart < furthestEnd) {
+                    res.fetchStart = furthestEnd;
+                }
+
+                // as long as this resource has > 0 duration, add it to our next list
+                if (res.fetchStart < res.responseEnd) {
+                    times2.push(res);
+
+                    // keep track of the furthest end point
+                    furthestEnd = res.responseEnd;
+                }
+            }
+
+            // Reduce down again to same start times again, and now we should
+            // have no overlapping regions
+            var times3 = reduceFetchStarts(times2);
+
+            // Finally, calculate the overall time from our non-overlapping regions
+            var totalTime = 0;
+            for (i = 0; i < times3.length; i++) {
+                totalTime += times3[i].responseEnd - times3[i].fetchStart;
+            }
+
+            return totalTime;
+        }
+
+        /**
+         * Adds 'restiming' and 'servertiming' to the beacon
+         *
+         * @param [number] from Only get timings from
+         * @param [number] to Only get timings up to
+         */
+        function addResourceTimingToBeacon(from, to) {
+            var r;
+
+            // Can't send if we don't support JSON
+            if (typeof JSON === "undefined") {
+                return;
+            }
+
+            BOOMR.removeVar("restiming");
+            BOOMR.removeVar("servertiming");
+            r = getCompressedResourceTiming(from, to);
+            if (r) {
+                BOOMR.info("Client supports Resource Timing API", "restiming");
+                addToBeacon(r);
+            }
+        }
+
+        /**
+         * Given an array of server timing entries (from the resource timing entry),
+         * [initialize and] increment our count collector of the following format: {
+         *   "metric-one": {
+         *     count: 3,
+         *     counts: {
+         *       "description-one": 2,
+         *       "description-two": 1,
+         *     }
+         *   }
+         * }
+         *
+         * @param {Object} countCollector Per-beacon collection of counts
+         * @param {Array} serverTimingEntries Server Timing Entries from a Resource Timing Entry
+         * @returns nothing
+         */
+        function accumulateServerTimingEntries(countCollector, serverTimingEntries) {
+            (serverTimingEntries || []).forEach(function(entry) {
+                var name = entry.name || entry.metric;
+                if (typeof countCollector[name] === "undefined") {
+                    countCollector[name] = {
+                        count: 0,
+                        counts: {}
+                    };
+                }
+                var metric = countCollector[name];
+                metric.counts[entry.description] = metric.counts[entry.description] || 0;
+                metric.counts[entry.description]++;
+                metric.count++;
+            });
+        }
+
+        /**
+         * Given our count collector of the format: {
+         *   "metric-two": {
+         *     count: 1,
+         *     counts: {
+         *       "description-three": 1,
+         *     }
+         *   },
+         *   "metric-one": {
+         *     count: 3,
+         *     counts: {
+         *       "description-one": 1,
+         *       "description-two": 2,
+         *     }
+         *   }
+         * }
+         *
+         * , return the lookup of the following format: [
+         *   ["metric-one", "description-two", "description-one"],
+         *   ["metric-two", "description-three"],
+         * ]
+         *
+         * Note: The order of these arrays of arrays matters: there are more server timing entries with
+         * name === "metric-one" than "metric-two", and more "metric-one"/"description-two" than
+         * "metric-one"/"description-one".
+         *
+         * @param {Object} countCollector Per-beacon collection of counts
+         * @returns {Array} compressed lookup array
+         */
+        function compressServerTiming(countCollector) {
+            return Object.keys(countCollector).sort(function(metric1, metric2) {
+                return countCollector[metric2].count - countCollector[metric1].count;
+            }).reduce(function(array, name) {
+                var sorted = Object.keys(countCollector[name].counts).sort(function(description1, description2) {
+                    return countCollector[name].counts[description2] -
+                        countCollector[name].counts[description1];
+                });
+
+                array.push(sorted.length === 1 && sorted[0] === "" ?
+                    name : // special case: no non-empty descriptions
+                    [name].concat(sorted));
+                return array;
+            }, []);
+        }
+
+        /**
+         * Given our lookup of the format: [
+         *   ["metric-one", "description-one", "description-two"],
+         *   ["metric-two", "description-three"],
+         * ]
+         *
+         * , create a O(1) name/description to index values lookup dictionary of the format: {
+         *   metric-one: {
+         *     index: 0,
+         *     descriptions: {
+         *       "description-one": 0,
+         *       "description-two": 1,
+         *     }
+         *   }
+         *   metric-two: {
+         *     index: 1,
+         *     descriptions: {
+         *       "description-three": 0,
+         *     }
+         *   }
+         * }
+         *
+         * @param {Array} lookup compressed lookup array
+         * @returns {Object} indexed version of the compressed lookup array
+         */
+        function indexServerTiming(lookup) {
+            return lookup.reduce(function(serverTimingIndex, compressedEntry, entryIndex) {
+                var name, descriptions;
+                if (Array.isArray(compressedEntry)) {
+                    name = compressedEntry[0];
+                    descriptions = compressedEntry.slice(1).reduce(function(descriptionCollector, description, descriptionIndex) {
+                        descriptionCollector[description] = descriptionIndex;
+                        return descriptionCollector;
+                    }, {});
+                }
+                else {
+                    name = compressedEntry;
+                    descriptions = {
+                        "": 0
+                    };
+                }
+
+                serverTimingIndex[name] = {
+                    index: entryIndex,
+                    descriptions: descriptions
+                };
+                return serverTimingIndex;
+            }, {});
+        }
+
+        /**
+         * Given entryIndex and descriptionIndex, create the shorthand key into the lookup
+         * response format is ":<entryIndex>.<descriptionIndex>"
+         * either/both entryIndex or/and descriptionIndex can be omitted if equal to 0
+         * the "." can be ommited if descriptionIndex is 0
+         * the ":" can be ommited if entryIndex and descriptionIndex are 0
+         *
+         * @param {Integer} entryIndex index of the entry
+         * @param {Integer} descriptionIndex index of the description
+         * @returns {String} key into the compressed lookup
+         */
+        function identifyServerTimingEntry(entryIndex, descriptionIndex) {
+            var s = "";
+            if (entryIndex) {
+                s += entryIndex;
+            }
+            if (descriptionIndex) {
+                s += "." + descriptionIndex;
+            }
+            if (s.length) {
+                s = ":" + s;
+            }
+            return s;
+        }
+
+        /**
+         * Adds optimized performance entries trie and (conditionally) the optimized server timing lookup to the beacon
+         *
+         * @param {Object} r An object containing the optimized performance entries trie and the optimized server timing
+         *  lookup
+         */
+        function addToBeacon(r) {
+            BOOMR.addVar("restiming", JSON.stringify(r.restiming));
+            if (r.servertiming.length) {
+                BOOMR.addVar("servertiming", BOOMR.utils.serializeForUrl(r.servertiming));
+            }
+        }
+
+        /**
+         * Given our lookup of the format: [
+         *   ["metric-one", "description-one", "description-two"],
+         *   ["metric-two", "description-three"],
+         * ]
+         *
+         * , and a key of the format: duration:entryIndex.descriptionIndex,
+         * return the decompressed server timing entry (name, duration, description)
+         *
+         * Note: code only included as POC
+         *
+         * @param {Array} lookup compressed lookup array
+         * @param {Integer} key key into the compressed lookup
+         * @returns {Object} decompressed resource timing entry (name, duration, description)
+         */
+        /* BEGIN_DEBUG */
+        function decompressServerTiming(lookup, key) {
+            var split = key.split(":");
+            var duration = Number(split[0]);
+            var entryIndex = 0, descriptionIndex = 0;
+
+            if (split.length > 1) {
+                var identity = split[1].split(".");
+                if (identity[0] !== "") {
+                    entryIndex = Number(identity[0]);
+                }
+                if (identity.length > 1) {
+                    descriptionIndex = Number(identity[1]);
+                }
+            }
+
+            var name, description = "";
+            if (Array.isArray(lookup[entryIndex])) {
+                name = lookup[entryIndex][0];
+                description = lookup[entryIndex][1 + descriptionIndex] || "";
+            }
+            else {
+                name = lookup[entryIndex];
+            }
+
+            return {
+                name: name,
+                duration: duration,
+                description: description
+            };
+        }
+        /* END_DEBUG */
+
+        impl = {
+            complete: false,
+            sentNavBeacon: false,
+            initialized: false,
+            supported: null,
+            xhr_load: function() {
+                if (this.complete) {
+                    return;
+                }
+
+                // page load might not have happened, or will happen later, so
+                // set us as complete so we don't hold the page load
+                this.complete = true;
+                BOOMR.sendBeacon();
+            },
+            xssBreakWords: DEFAULT_XSS_BREAK_WORDS,
+            urlLimit: DEFAULT_URL_LIMIT,
+            clearOnBeacon: false,
+            trimUrls: [],
+            /**
+             * Array of resource types to track, or "*" for all.
+             *  @type {string[]|string}
+             */
+            trackedResourceTypes: "*",
+            serverTiming: true,
+            done: function() {
+                // Stop if we've already sent a nav beacon (both xhr and spa* beacons
+                // add restiming manually).
+                if (this.sentNavBeacon) {
+                    return;
+                }
+
+                addResourceTimingToBeacon();
+
+                this.complete = true;
+                this.sentNavBeacon = true;
+
+                BOOMR.sendBeacon();
+            },
+
+            onBeacon: function(vars) {
+                var p = BOOMR.getPerformance();
+
+                // clear metrics
+                if (vars.hasOwnProperty("restiming")) {
+                    BOOMR.removeVar("restiming");
+                }
+                if (vars.hasOwnProperty("servertiming")) {
+                    BOOMR.removeVar("servertiming");
+                }
+
+                if (impl.clearOnBeacon && p) {
+                    var clearResourceTimings = p.clearResourceTimings || p.webkitClearResourceTimings;
+                    if (clearResourceTimings && typeof clearResourceTimings === "function") {
+                        clearResourceTimings.call(p);
+                    }
+                }
+            },
+
+            prerenderToVisible: function() {
+                // ensure we add our data to the beacon even if we had added it
+                // during prerender (in case another beacon went out in between)
+                this.sentNavBeacon = false;
+
+                // add our data to the beacon
+                this.done();
+            }
+        };
+
+        BOOMR.plugins.ResourceTiming = {
+            init: function(config) {
+                BOOMR.utils.pluginConfig(impl, config, "ResourceTiming",
+                    ["xssBreakWords", "clearOnBeacon", "urlLimit", "trimUrls", "trackedResourceTypes", "serverTiming"]);
+
+                if (impl.initialized) {
+                    return this;
+                }
+
+                if (this.is_supported()) {
+                    BOOMR.subscribe("page_ready", impl.done, null, impl);
+                    BOOMR.subscribe("prerender_to_visible", impl.prerenderToVisible, null, impl);
+                    BOOMR.subscribe("xhr_load", impl.xhr_load, null, impl);
+                    BOOMR.subscribe("onbeacon", impl.onBeacon, null, impl);
+                    BOOMR.subscribe("before_unload", impl.done, null, impl);
+                }
+                else {
+                    impl.complete = true;
+                }
+
+                impl.initialized = true;
+
+                return this;
+            },
+            is_complete: function() {
+                return true;
+            },
+            is_enabled: function() {
+                return impl.initialized && this.is_supported();
+            },
+            is_supported: function() {
+                var p;
+
+                if (impl.supported !== null) {
+                    return impl.supported;
+                }
+
+                // check for getEntriesByType and the entry type existing
+                var p = BOOMR.getPerformance();
+                impl.supported = p &&
+                    typeof p.getEntriesByType === "function" &&
+                    typeof window.PerformanceResourceTiming !== "undefined";
+
+                return impl.supported;
+            },
+            //
+            // Public Exports
+            //
+            getCompressedResourceTiming: getCompressedResourceTiming,
+            getFilteredResourceTiming: getFilteredResourceTiming,
+            calculateResourceTimingUnion: calculateResourceTimingUnion,
+            addResourceTimingToBeacon: addResourceTimingToBeacon,
+            addToBeacon: addToBeacon
+
+            //
+            // Test Exports (only for debug)
+            //
+            /* BEGIN_DEBUG */,
+            trimTiming: trimTiming,
+            convertToTrie: convertToTrie,
+            optimizeTrie: optimizeTrie,
+            findPerformanceEntriesForFrame: findPerformanceEntriesForFrame,
+            toBase36: toBase36,
+            getVisibleEntries: getVisibleEntries,
+            reduceFetchStarts: reduceFetchStarts,
+            compressSize: compressSize,
+            decompressSize: decompressSize,
+            trimUrl: trimUrl,
+            getResourceLatestTime: getResourceLatestTime,
+            mergePixels: mergePixels,
+            countPixels: countPixels,
+            getOptimizedTimepoints: getOptimizedTimepoints,
+            decompressTimePoints: decompressTimePoints,
+            accumulateServerTimingEntries: accumulateServerTimingEntries,
+            compressServerTiming: compressServerTiming,
+            indexServerTiming: indexServerTiming,
+            identifyServerTimingEntry: identifyServerTimingEntry,
+            decompressServerTiming: decompressServerTiming,
+            SPECIAL_DATA_PREFIX: SPECIAL_DATA_PREFIX,
+            SPECIAL_DATA_DIMENSION_TYPE: SPECIAL_DATA_DIMENSION_TYPE,
+            SPECIAL_DATA_SIZE_TYPE: SPECIAL_DATA_SIZE_TYPE,
+            SPECIAL_DATA_SCRIPT_ATTR_TYPE: SPECIAL_DATA_SCRIPT_ATTR_TYPE,
+            SPECIAL_DATA_LINK_ATTR_TYPE: SPECIAL_DATA_LINK_ATTR_TYPE,
+            ASYNC_ATTR: ASYNC_ATTR,
+            DEFER_ATTR: DEFER_ATTR,
+            LOCAT_ATTR: LOCAT_ATTR,
+            INITIATOR_TYPES: INITIATOR_TYPES,
+            REL_TYPES: REL_TYPES
+            /* END_DEBUG */
+        };
+
+    }());
+
+    /**
+     * The Continuity plugin measures performance and user experience metrics beyond
+     * the traditional Page Load timings.
+     *
+     * ## Approach
+     *
+     * The goal of the Continuity plugin is to capture the important aspects of your
+     * visitor's overall _user experience_ during page load and beyond.  For example, the
+     * plugin measures when the site appeared _Visually Ready_, and when it was _Interactive_.
+     *
+     * In addition, the Continuity plugin captures in-page interactions (such as keys,
+     * clicks and scrolls), and monitors how the site performed when responding to
+     * these inputs.
+     *
+     * Finally, the Continuity plugin is utilizing cutting-edge browser
+     * performance APIs like [LongTasks](https://w3c.github.io/longtasks/) to get
+     * important insights into how the browser is performing.
+     *
+     * Here is some of the data that the Continuity plugin captures:
+     *
+     * * Timers:
+     *     * **Time to Visually Ready**: When did the user feel like they could interact
+     *         with the site?  When did it look ready? (see below for details)
+     *     * **Time to Interactive**: After the page was Visually Ready, when was the
+     *         first time the user could have interacted with the site, and had a
+     *         good (performant) experience? (see below for details)
+     *     * **Time to First Interaction**: When was the first time the user tried to
+     *         interact (key, click or scroll) with the site?
+     * * Interaction metrics:
+     *     * **Interactions**: keys, clicks, scrolls: counts and event log
+     *     * **Delayed Interactions**: How often was the user's interaction delayed more than 50ms?
+     *     * **Rage Clicks**: When the user repeatedly clicked on the same element/region
+     * * Page performance metrics:
+     *     * **Framerate data**: FPS during page load, minimum FPS, number of long frames
+     *     * **LongTask data**: Number of LongTasks, how much time they took, attribution
+     *         to what caused them
+     *     * **Page Busy**: Measurement of the page's busyness
+     *
+     * This data is captured during the page load, as well as when the user is later
+     * interacting with the site.  The data is reported on at regular intervals, so you
+     * can see how it changes over time.
+     *
+     * If configured, the Continuity plugin can send additional beacons after a page
+     * interaction happens.
+     *
+     * ## Configuration
+     *
+     * The `Continuity` plugin has a variety of options to configure what it does (and
+     * what it doesn't do):
+     *
+     * ### Monitoring Long Tasks
+     *
+     * If `monitorLongTasks` is turned on, the Continuity plugin will monitor
+     * [LongTasks](https://w3c.github.io/longtasks/) (if the browser supports it).
+     *
+     * LongTasks are tasks on the browser's UI thread that monopolize it and block other
+     * critical tasks from being executed (e.g. reacting to user input).  LongTasks
+     * can caused by anything from JavaScript execution to parsing to layout.  The browser
+     * fires LongTask events (via the `PerformanceObserver`) when a task takes over 50
+     * milliseconds to execute.
+     *
+     * LongTasks are important to measure as a LongTask will block all other user input
+     * (e.g. clicks, keys and scrolls).
+     *
+     * LongTasks are powerful because they can give _attribution_ about what component
+     * caused the task, i.e. the source JavaScript file.
+     *
+     * If `monitorLongTasks` is enabled:
+     *
+     * * A `PerformanceObserver` will be turned on to capture all LongTasks that happen
+     *     on the page.
+     * * LongTasks will be used to calculate _Time to Interactive_
+     * * A log (`c.lt`), timeline (`c.t.lt`) and other LongTasks metrics (`c.lt.*`) will
+     *     be added to the beacon (see details below)
+     *
+     * The log `c.lt` is a JSON (or JSURL) object of compressed LongTask data.  See
+     * the source code for what each attribute maps to.
+     *
+     * LongTasks are currently a cutting-edge browser feature and will not be available
+     * in older browsers.
+     *
+     * ### Monitoring Page Busy
+     *
+     * If `monitorPageBusy` is turned on, the Continuity plugin will measure Page Busy.
+     *
+     * Page Busy is a way of measuring how much work was being done on the page (how "busy"
+     * it was).  Page Busy is calculated via `setTimout()` polling: a timeout is scheduled
+     * on the page at a regular interval, and _busyness_ is detected if that timeout does
+     * not fire at the time it was expected to.
+     *
+     * Page Busy is a percentage -- 100% means that the browser was entirely busy doing other
+     * things, while 0% means the browser was idle.
+     *
+     * Page Busy is _just an estimate_, as it uses sampling.  As an example, if you have
+     * a high number of small tasks that execute frequently, Page Busy might run at
+     * a frequency that it either detects 100% (busy) or 0% (idle).
+     *
+     * Page Busy is not the most efficient way of measuring what the browser is doing,
+     * but since it is calculated via `setTimeout()`, it is supported in all browsers.
+     * The Continuity plugin currently measures Page Busy by polling every 25 milliseconds.
+     *
+     * Page Busy can be an indicator of how likely the user will have a good experience
+     * when they interact with it. If Page Busy is 100%, the user may see the page lag
+     * behind their input.
+     *
+     * If `monitorPageBusy` is enabled:
+     *
+     * * The Page Busy monitor will be active (polling every 25 milliseconds) (unless
+     *     LongTasks is supported and enabled)
+     * * Page Busy will be used to calculate _Time to Interactive_
+     * * A timeline (`c.t.busy`) and the overall Page Busy % (`c.b`) will be added to the
+     *     beacon (see details below)
+     *
+     * ### Monitoring Frame Rate
+     *
+     * If `monitorFrameRate` is turned on, the Continuity plugin will measure the Frame
+     * Rate of the page via
+     * [`requestAnimationFrame`](https://developer.mozilla.org/en-US/docs/Web/API/window/requestAnimationFrame).
+     *
+     * `requestAnimationFrame` is a browser API that can be used to schedule animations
+     * that run at the device's refresh rate.  It can also be used to measure how many
+     * frames were actually delivered to the screen, which can be an indicator of how
+     * good the user's experience is.
+     *
+     * `requestAnimationFrame` is available in
+     * [all modern browsers](https://caniuse.com/#feat=requestanimationframe).
+     *
+     * If `monitorFrameRate` is enabled:
+     *
+     * * `requestAnimationFrame` will be used to measure Frame Rate
+     * * Frame Rate will be used to calculate _Time to Interactive_
+     * * A timeline (`c.t.fps`) and many Frame Rate metrics (`c.f.*`) will be added to the
+     *     beacon (see details below)
+     *
+     * ### Monitoring Interactions`
+     *
+     * If `monitorInteractions` is turned on, the Continuity plugin will measure user
+     * interactions during the page load and beyond.
+     *
+     * Interactions include:
+     *
+     * * Mouse Clicks
+     *     * Rage Clicks: Clicks to the same area repeatedly
+     * * Mouse Movement (will not send a beacon or be used for TTFI calculation)
+     * * Keyboard Presses (individual key codes are not captured)
+     * * Scrolls
+     *     * Distinct Scrolls: Scrolls that happened over 2 seconds since the last scroll
+     * * Page Visibility changes
+     * * Orientation changes
+     *
+     * These interactions are monitored and instrumented throughout the page load.  By using
+     * the event's `timeStamp`, we can detect how long it took for the physical event (e.g.
+     * mouse click) to execute the JavaScript listening handler (in the Continuity plugin).
+     * If there is a delay, this is tracked as an _Interaction Delay_.  Interaction Delays
+     * can be an indicator that the user is having a degraded experience.
+     *
+     * In addition, if `afterOnload` is enabled, these interactions (except Mouse Movements)
+     * can also trigger an `interaction` beacon after the Page Load.  `afterOnloadMaxLength`
+     * can be used to control how many milliseconds after Page Load interactions will be
+     * measured for.
+     *
+     * After a post-Load interaction occurs, the plugin will wait for `afterOnloadMinWait`
+     * milliseconds before sending the `interaction` beacon.  If another interaction
+     * happens within that timeframe, the plugin will wait another `afterOnloadMinWait`
+     * milliseconds.  This is to ensure that groups of interactions will be batched
+     * together.  The plugin will wait up to 60 seconds to batch groups of interactions
+     * together, at which point a beacon will be sent immediately.
+     *
+     * If `monitorInteractions` is enabled:
+     *
+     * * Event handlers will be added to monitor clicks, keys, etc.
+     * * A log and many interaction metrics (`c.f.*`) will be added to the
+     *     beacon (see details below)
+     *
+     * For `interaction` beacons, the following will be set:
+     *
+     * * `rt.tstart` will be the timestamp of the first interaction
+     * * `rt.end` will be the timestamp of the last interaction
+     * * `rt.start = 'manual'`
+     * * `http.initiator = 'interaction'`
+     *
+     * ### Monitoring Page Statistics
+     *
+     * If `monitorStats` is turned on, the Continuity plugin will measure statistics
+     * about the page and browser over time.
+     *
+     * These statistics include:
+     *
+     * * Memory Usage: `usedJSHeapSize` (Chrome-only)
+     * * [Battery Level](https://developer.mozilla.org/en-US/docs/Web/API/Battery_Status_API)
+     * * DOM Size: Number of bytes of HTML in the root frame
+     * * DOM Length: Number of DOM nodes in the root frame
+     * * Mutations: How often and how much the page is changing
+     *
+     * If `monitorInteractions` is enabled:
+     *
+     * * Events and polls will be setup to monitor the above statistics
+     * * A timeline (`c.t.*`) of these statistics will be added to the beacon (see
+     *     details below)
+     *
+     * ## New Timers
+     *
+     * There are 3 new timers from the Continuity plugin that center around user
+     * interactions:
+     *
+     * * **Time to Visually Ready** (VR)
+     * * **Time to Interactive** (TTI)
+     * * **Time to First Interaction** (TTFI)
+     *
+     * _Time to Interactive_ (TTI), at it's core, is a measurement (timestamp) of when the
+     * page was interact-able. In other words, at what point does the user both believe
+     * the page could be interacted with, and if they happened to try to interact with
+     * it then, would they have a good experience?
+     *
+     * To calculate Time to Interactive, we need to figure out two things:
+     *
+     * * Does the page appear to the visitor to be interactable?
+     *     * We'll use one or more Visually Ready Signals to determine this
+     * * If so, what's the first time a user could interact with the page and have a good
+     *     experience?
+     *     * We'll use several Time to Interactive Signals to determine this
+     *
+     * ### Visually Ready
+     *
+     * For the first question, "does the page appear to be interactable?", we need to
+     * determine when the page would _look_ to the user like they _could_ interact with it.
+     *
+     * It's only after this point that TTI could happen. Think of Visually Ready (VR) as
+     * the anchor point of TTI -- it's the earliest possible timestamp in the page's
+     * lifecycle that TTI could happen.
+     *
+     * We have a few signals that might be appropriate to use as Visually Ready:
+     * * First Paint (if available)
+     *     * We should wait at least for the first pain on the page
+     *     * i.e. IE's [`msFirstPaint`](https://msdn.microsoft.com/en-us/library/ff974719)
+     *         or Chrome's `firstPaintTime`
+     *     * These might just be paints of white, so they're not the only signal we should use
+     * * [domContentLoadedEventEnd](https://msdn.microsoft.com/en-us/library/ff974719)
+     *     * "The DOMContentLoaded event is fired when the initial HTML document has been
+     *         completely loaded and parsed, without waiting for stylesheets, images, and subframes to finish loading"
+     *     * This happens after `domInteractive`
+     *     * Available in NavigationTiming browsers via a timestamp and all other
+     *         browser if we're on the page in time to listen for readyState change events
+     * * Hero Images (if defined)
+     *     * Instead of tracking all Above-the-Fold images, it could be useful to know
+     *         which specific images are important to the site owner
+     *     * Defined via a simple CSS selector (e.g. `.hero-images`)
+     *     * Can be measured via ResourceTiming
+     * * "My Framework is Ready" (if defined)
+     *     * A catch-all for other things that we can't automatically track
+     *     * This would be an event or callback from the page author saying their page is ready
+     *     * They could fire this for whatever is important to them, i.e. when their page's
+     *         click handlers have all registered
+     *     * Once the last of all of the above have happened, Visually Ready has occurred.
+     *
+     * Visually Ready will add `c.tti.vr` to the beacon.
+     *
+     * #### Controlling Visually Ready via Framework Ready
+     *
+     * There are two additional options for controlling when Visually Ready happens: via Framework Ready or Hero Images.
+     *
+     * If you want to wait for your framework to be ready (e.g. your SPA has loaded or
+     * a button has a click handler registered), you can add an option `ttiWaitForFrameworkReady`.
+     *
+     * Once enabled, TTI won’t be calculated until the following is called:
+     *
+     * ```
+     * // my framework is ready
+     * if (BOOMR && BOOMR.plugins && BOOMR.plugins.Continuity) {
+     *     BOOMR.plugins.Continuity.frameworkReady();
+     * }
+     * ```
+     *
+     * #### Controlling Visually Ready via Hero Images
+     *
+     * If you want to wait for your hero/main images to be loaded before Visually Ready
+     * is measured, you can give the plugin a CSS selector via `ttiWaitForHeroImages`.
+     * If set, Visually Ready will be delayed until all IMGs that match that selector
+     * have loaded, e.g.:
+     *
+     * ```
+     * window.BOOMR_config = {
+     *   Continuity: {
+     *     enabled: true,
+     *     ttiWaitForHeroImages: ".hero-image"
+     *   }
+     * };
+     * ```
+     *
+     * Note this only works in ResourceTiming-supported browsers (and won’t be used in
+     * older browsers).
+     *
+     * ### Time to Interactive
+     *
+     * After the page is Visually Ready for the user, if they were to try to interact
+     * with the page (click, scroll, type), when would they have a good experience (i.e.
+     * the page responded in a satisfactory amount of time)?
+     *
+     * We can use some of the signals below, when available:
+     *
+     * * FPS
+     *     * Available in all modern browsers: by using `requestAnimationFrame` we can
+     *         get a sense of the overall framerate (FPS)
+     *     * To ensure a "smooth" page load experience, ideally the page should never drop
+     *         below 20 FPS.
+     *     * 20 FPS gives about 50ms of activity to block the main thread at any one time
+     * * LongTasks
+     *     * Via the PerformanceObserver, fires LongTasks events any time the main thread
+     *         was blocked by a task that took over 50ms such as JavaScript, layout, etc
+     *     * Great indicator both that the page would not have been interact-able and
+     *         in some cases, attribution as to why
+     * * Page Busy via `setTimeout`
+     *     * By measuring how long it takes for a regularly-scheduled callback to fire,
+     *         we can detect other tasks that got in the way
+     *     * Can give an estimate for Page Busy Percentage (%)
+     *     * Available in every browser
+     *
+     * The `waitAfterOnload` option will delay the beacon for up to that many milliseconds
+     * if Time to Interactive doesn't happen by the browser's `load` event.  You shouldn't
+     * set it too high, or the likelihood that the page load beacon will be lost increases.
+     * If `waitAfterOnload` is reached and TTI hasn't happened yet, the beacon will be
+     * sent immediately (missing the TTI timer).
+     *
+     * If you set `waitAfterOnload` to `0` (or it's not set), Boomerang will send the
+     * beacon at the regular page load event.  If TTI didn’t yet happen, it won’t be reported.
+     *
+     * If you want to set `waitAfterOnload`, we'd recommend between `1000` and `5000`
+     * (1 and 5 seconds).
+     *
+     * Time to Interaction will add `c.tti` to the beacon.
+     *
+     * #### Algorithm
+     *
+     * Putting these two timers together, here's how we measure Visually Ready and
+     * Time to Interactive:
+     *
+     * 1. Determine the highest Visually Ready timestamp (VRTS):
+     *     * First Paint (if available)
+     *     * `domContentLoadedEventEnd`
+     *     * Hero Images are loaded (if configured)
+     *     * Framework Ready (if configured)
+     *
+     * 2. After VRTS, calculate Time to Interactive by finding the first period of
+     *     500ms where all of the following are true:
+     *     * There were no LongTasks
+     *     * The FPS was always above 20 (if available)
+     *     * Page Busy was less than 10% (if the above aren't available)
+     *
+     * ### Time to First Interaction
+     *
+     * Time to First Interaction (TTFI) is the first time a user interacted with the
+     * page.  This may happen during or after the page's `load` event.
+     *
+     * Time to First Interaction will add `c.ttfi` to the beacon.
+     *
+     * ## Timelines
+     *
+     * If `sendTimeline` is enabled, many of the above options will add bucketed
+     * "timelines" to the beacon.
+     *
+     * The Continuity plugin keeps track of statistics, interactions and metrics over time
+     * by keeping track of these counts at a granularity of 100-millisecond intervals.
+     *
+     * As an example, if you are measuring LongTasks, its timeline will have entries
+     * whenever a LongTask occurs.
+     *
+     * Not every timeline will have data for every interval.  As an example, the click
+     * timeline will be sparse except for the periods where there was a click.  Statistics
+     * like DOM Size are captured only once every second.  The Continuity plugin is
+     * optimized to use as little memory as possible for these cases.
+     *
+     * ### Compressed Timeline Format
+     *
+     * If `sendTimeline` is enabled, the Continuity plugin will add several timelines
+     * as `c.t.[name]` to the beacon in a compressed format.
+     *
+     * An example timeline may look like this:
+     *
+     * ```
+     * c.t.fps      = 03*a*657576576566766507575*8*65
+     * c.t.domsz    = 11o3,1o4
+     * c.t.mousepct = 2*5*0053*4*00050718
+     * ```
+     *
+     * The format of the compressed timeline is as follows:
+     *
+     * `[Compression Type - 1 character][Data - everything else]`
+     *
+     * * Compression Type is a single character that denotes how each timeline's bucket
+     *     numbers are compressed:
+     *     * `0` (for smaller numbers):
+     *         * Each number takes a single character, encoded in Base-64
+     *         * If a number is >= 64, the number is converted to Base-36 and wrapped in
+     *             `.` characters
+     *     * `1` (for larger numbers)
+     *         * Each number is separated by `,`s
+     *         * Each number is encoded in Base-36
+     *     * `2` (for percentages)
+     *         * Each number takes two characters, encoded in Base-10
+     *         * If a number is <= 0, it is `00`
+     *         * If a number is >= 100, it is `__`
+     *
+     * In addition, for repeated numbers, the format is as follows:
+     *
+     * `*[Repeat Count]*[Number]`
+     *
+     * Where:
+     *
+     * * Repeat Count is encoded Base-36
+     * * Number is encoded per the rules above
+     *
+     * From the above example, the data would be decompressed to:
+     *
+     * ```
+     * c.t.fps =
+     *     [3, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 6, 5, 7, 5, 7, 6, 5, 7, 6, 5, 6, 6, 7, 6,
+     *     6, 5, 0, 7, 5, 7, 5, 6, 6, 6, 6, 6, 6, 6, 6, 5];
+     *
+     * c.t.domsz = [2163, 2164];
+     *
+     * c.t.mousepct = [0, 0, 0, 0, 0, 53, 0, 5, 7, 18];
+     * ```
+     *
+     * The timeline can be decompressed via `BOOMR.plugins.Continuity.decompressBucketLog`
+     * (for debug builds).
+     *
+     * The Continuity Epoch (`c.e`) and Continuity Last Beacon (`c.lb`) are timestamps
+     * (Base-36) that indicate what timestamp the first bucket represents.  If both are
+     * given, the Last Beacon timestamp should be used.
+     *
+     * For example:
+     *
+     * ```
+     * c.e=j5twmlbv       // 1501611350395
+     * c.lb=j5twmlyk      // 1501611351212
+     * c.t.domsz=11o3,1o4 // 2163, 2164 using method 1
+     * ```
+     *
+     * In the above example, the first value of `2163` (`1o3` Base-36) happened
+     * at `1501611351212`.  The second value of `2164` (`1o4` Base-36) happened
+     * at `1501611351212 + 100 = 1501611351312`.
+     *
+     * For all of the available timelines, see the Beacon Parameters list below.
+     *
+     * ## Logs
+     *
+     * If `sendLog` is enabled, the Continuity plugin will add a log to the beacon as
+     * `c.l`.
+     *
+     * The following events will generate a Log entry with the listed parameters:
+     *
+     * * Scrolls (type `0`):
+     *     * `y`: Y pixels
+     * * Clicks (type `1`):
+     *     * `x`: X pixels
+     *     * `y`: Y pixels
+     * * Mouse Movement (type `2`):
+     *     * Data is captured at minimum 10 pixel granularity
+     *     * `x`: X pixels
+     *     * `y`: Y pixels
+     * * Keyboard presses (type `3`):
+     *     * (no data is captured)
+     * * Visibility Changes (type `4`):
+     *     * `s`
+     *         * `0`: `visible`
+     *         * `1`: `hidden`
+     *         * `2`: `prerender`
+     *         * `3`: `unloaded`
+     * * Orientation Changes (type `5`):
+     *     * `a`: Angle
+     *
+     * The log is put on the beacon in a compressed format.  Here is an example log:
+     *
+     * ```
+     * c.l=214y,xk9,y8p|142c,xk5,y8v|34kh
+     * ```
+     *
+     * The format of the compressed timeline is as follows:
+     *
+     * ```
+     * [Type][Timestamp],[Param1 type][Param 1 value],[... Param2 ...]|[... Event2 ...]
+     * ```
+     *
+     * * Type is a single character indicating what type of event it is, per above
+     * * Timestamp (`navigationStart` epoch) is Base-36 encoded
+     * * Each parameter follows, separated by commas:
+     *     * The first character indicates the type of parameter
+     *     * The subsequent characters are the value of the parameter, Base-36 encoded
+     *
+     * From the above example, the data would be decompressed to:
+     *
+     * ```
+     * [
+     *     {
+     *         "type": "mouse",
+     *         "time": 1474,
+     *         "x": 729,
+     *         "y": 313
+     *     },
+     *     {
+     *         "type": "click",
+     *         "time": 5268,
+     *         "x": 725,
+     *         "y": 319
+     *     },
+     *     {
+     *         "type": "key",
+     *         "time": 5921,
+     *     }
+     * ]
+     * ```
+     *
+     * The timeline can be decompressed via `BOOMR.plugins.Continuity.decompressLog`
+     * (for debug builds).
+     *
+     * ## Beacon Parameters
+     *
+     * The following parameters will be added to the beacon:
+     *
+     * * `c.e`: Continuity Epoch timestamp (when everything started measuring) (Base-36)
+     * * `c.l`: Log (compressed)
+     * * `c.lt`: LongTask data (compressed)
+     * * `c.lt.n`: Number of LongTasks (Base-10)
+     * * `c.lt.tt`: Total duration of LongTasks (Base-10)
+     * * `c.b`: Page Busy percentage (Base-10)
+     * * `c.t.fps`: Frame Rate timeline (compressed)
+     * * `c.t.inter`: Interactions timeline (compressed)
+     * * `c.t.interdly`: Delayed Interactions timeline (compressed)
+     * * `c.t.key`: Keyboard press timeline (compressed)
+     * * `c.t.click`: Click timeline (compressed)
+     * * `c.t.mouse`: Mouse movements timeline (compressed)
+     * * `c.t.mousepct`: Mouse movement percentage (of full screen) timeline (compressed)
+     * * `c.t.mem`: Memory usage timeline (compressed)
+     * * `c.t.domsz`: DOM Size timeline (compressed)
+     * * `c.t.domln`: DOM Length timeline (compressed)
+     * * `c.t.mut`: DOM Mutations timeline (compressed)
+     * * `c.tti.vr`: Visually Ready (Base-10)
+     * * `c.tti`: Time to Interactive (Base-10)
+     * * `c.f`: Average Frame Rate over the Frame Rate Duration (Base-10)
+     * * `c.f.d`: Frame Rate duration (how long it has been measuring) (Base-10)
+     * * `c.f.m`: Minimum Frame Rate (Base-10)
+     * * `c.f.l`: Number of Long Frames (>= 50ms) (Base-10)
+     * * `c.f.s`: Frame Rate measurement start time (Base-36)
+     * * `c.k`: Keyboard event count (Base-10)
+     * * `c.k.e`: Keyboard ESC count (Base-10)
+     * * `c.c`: Click count (Base-10)
+     * * `c.c.r`: Rage click count (Base-10)
+     * * `c.m.p`: Mouse movement percentage (Base-10)
+     * * `c.m.n`: Mouse movement pixels (Base-10)
+     * * `c.ttfi`: Time to First Interactive (Base-10)
+     * * `c.i.dc`: Delayed interaction count (Base-10)
+     * * `c.i.dt`: Delayed interaction time (Base-10)
+     * * `c.i.a`: Average Interaction delay (Base-10)
+     * * `c.lb`: Last Beacon timestamp (Base-36)
+     * * `c.s`: Scroll count (Base-10)
+     * * `c.s.p`: Scroll percentage (Base-10)
+     * * `c.s.y`: Scroll y (pixels) (Base-10)
+     * * `c.s.d`: Distinct scrolls (scrolls that happen 2 seconds after the last) (Base-10)
+     */
+    // TODO: Limit max timeline and log?
+    (function() {
+        BOOMR = window.BOOMR || {};
+
+        BOOMR.plugins = BOOMR.plugins || {};
+
+        if (BOOMR.plugins.Continuity) {
+            return;
+        }
+
+        //
+        // Constants available to all Continuity classes
+        //
+        /**
+         * Timeline collection interval
+         */
+        var COLLECTION_INTERVAL = 100;
+
+        /**
+         * Maximum length (ms) that events will be recorded, if not
+         * a SPA.
+         */
+        var DEFAULT_AFTER_ONLOAD_MAX_LENGTH = 60000;
+
+        /**
+         * Time to Interactive polling period (after onload, how often we'll
+         * check to see if TTI fired yet)
+         */
+        var TIME_TO_INTERACTIVE_WAIT_POLL_PERIOD = 500;
+
+        /**
+         * Compression Modes
+         */
+
+        /**
+         * Most numbers are expected to be 0-63, though larger numbers are
+         * allowed.
+         */
+        var COMPRESS_MODE_SMALL_NUMBERS = 0;
+
+        /**
+         * Most numbers are expected to be larger than 63.
+         */
+        var COMPRESS_MODE_LARGE_NUMBERS = 1;
+
+        /**
+         * Numbers are from 0 to 100
+         */
+        var COMPRESS_MODE_PERCENT = 2;
+
+        /**
+         * Log types
+         */
+        var LOG_TYPE_SCROLL = 0;
+        var LOG_TYPE_CLICK = 1;
+        var LOG_TYPE_MOUSE = 2;
+        var LOG_TYPE_KEY = 3;
+        var LOG_TYPE_VIS = 4;
+        var LOG_TYPE_ORIENTATION = 5;
+
+        /**
+         * Base64 number encoding
+         */
+        var BASE64_NUMBER = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_-";
+
+        /**
+         * Large number delimiter (.)
+         *
+         * For COMPRESS_MODE_SMALL_NUMBERS, numbers larger than 63 are wrapped in this
+         * character.
+         */
+        var LARGE_NUMBER_WRAP = ".";
+
+        // Performance object
+        var p = BOOMR.getPerformance();
+
+        // Metrics that will be exported
+        var externalMetrics = {};
+
+        /**
+         * Epoch - when to base all relative times from.
+         *
+         * If the browser supports NavigationTiming, this is navigationStart.
+         *
+         * If not, just use 'now'.
+         */
+        var epoch = p && p.timing && p.timing.navigationStart ?
+            p.timing.navigationStart : BOOMR.now();
+
+        /**
+         * Debug logging
+         *
+         * @param {string} msg Message
+         */
+        function debug(msg) {
+            BOOMR.debug(msg, "Continuity");
+        }
+
+        /**
+         * Compress JSON to a string for a URL parameter in the best way possible.
+         *
+         * If UserTimingCompression is available (which has JSURL), use that.  The
+         * data will start with the character `~`
+         *
+         * Otherwise, use JSON.stringify.  The data will start with the character `{`.
+         *
+         * @param {object} obj Data
+         *
+         * @returns {string} Compressed data
+         */
+        function compressJson(data) {
+            var utc = window.UserTimingCompression || BOOMR.window.UserTimingCompression;
+
+            if (utc) {
+                return utc.jsUrl(data);
+            }
+            else if (window.JSON) {
+                return JSON.stringify(data);
+            }
+            else {
+                // JSON isn't available
+                return "";
+            }
+        }
+
+        /**
+         * Gets a compressed bucket log.
+         *
+         * Each bucket is represented by a single character (the value of the
+         * bucket base 64), unless:
+         *
+         * 1. There are 4 or more duplicates in a row. Then the format is:
+         *   *[count of dupes]*[number base 64]
+         * 2. The value is greater than 63, then the format is:
+         *   _[number base 36]_
+         *
+         * @param {number} type Compression type
+         * @param {boolean} backfill Backfill
+         * @param {object} dataSet Data
+         * @param {number} sinceBucket Lowest bucket
+         * @param {number} endBucket Highest bucket
+         *
+         * @returns {string} Compressed log
+         */
+        function compressBucketLog(type, backfill, dataSet, sinceBucket, endBucket) {
+            var out = "", val = 0, i, j, dupes, valStr, nextVal, wroteSomething;
+
+            if (!dataSet || !BOOMR.utils.Compression) {
+                return "";
+            }
+
+            // if we know there's no data, return an empty string
+            if (dataSet.length === 0) {
+                return "";
+            }
+
+            if (backfill) {
+                if (typeof dataSet[sinceBucket] === "undefined") {
+                    dataSet[sinceBucket] = 0;
+                }
+
+                // pre-fill buckets
+                for (i = sinceBucket + 1; i <= endBucket; i++) {
+                    if (typeof dataSet[i] === "undefined") {
+                        dataSet[i] = dataSet[i - 1];
+                    }
+                }
+            }
+
+            for (i = sinceBucket; i <= endBucket; i++) {
+                val = typeof dataSet[i] === "number" ? dataSet[i] : 0;
+
+                //
+                // Compression modes
+                //
+                if (type === COMPRESS_MODE_SMALL_NUMBERS) {
+                    // Small numbers can be max 63 for our single-digit encoding
+                    if (val <= 63) {
+                        valStr = BASE64_NUMBER[val];
+                    }
+                    else {
+                        // large numbers get wrapped in .s
+                        valStr = LARGE_NUMBER_WRAP + val.toString(36) + LARGE_NUMBER_WRAP;
+                    }
+                }
+                else if (type === COMPRESS_MODE_LARGE_NUMBERS) {
+                    // large numbers just get Base36 encoding by default
+                    valStr = val.toString(36);
+                }
+                else if (type === COMPRESS_MODE_PERCENT) {
+                    //
+                    // Percentage characters take two digits always, with
+                    // 100 = __
+                    //
+                    if (val < 99) {
+                        // 0-pad
+                        valStr = val <= 9 ? ("0" + Math.max(val, 0)) : val;
+                    }
+                    else {
+                        // 100 or higher
+                        valStr = "__";
+                    }
+                }
+
+                // compress sequences of the same number 4 or more times
+                if ((i + 3) <= endBucket &&
+                    (dataSet[i + 1] === val || (val === 0 && dataSet[i + 1] === undefined)) &&
+                    (dataSet[i + 2] === val || (val === 0 && dataSet[i + 2] === undefined)) &&
+                    (dataSet[i + 3] === val || (val === 0 && dataSet[i + 3] === undefined))) {
+                    dupes = 1;
+
+                    // loop until we're past the end bucket or we find a non-dupe
+                    while (i < endBucket) {
+                        if (dataSet[i + 1] === val || (val === 0 && dataSet[i + 1] === undefined)) {
+                            dupes++;
+                        }
+                        else {
+                            break;
+                        }
+
+                        i++;
+                    }
+
+                    nextVal = "*" + dupes.toString(36) + "*" + valStr;
+                }
+                else {
+                    nextVal = valStr;
+                }
+
+                // add this value if it isn't just 0s at the end
+                if (val !== 0 || i !== endBucket) {
+                    //
+                    // Small numbers fit into a single character (or are delimited
+                    // by _s), so can just be appended to each other.
+                    //
+                    // Percentage always takes two characters.
+                    //
+                    if (type === COMPRESS_MODE_LARGE_NUMBERS) {
+                        //
+                        // Large numbers need to be separated by commas
+                        //
+                        if (wroteSomething) {
+                            out += ",";
+                        }
+                    }
+
+                    wroteSomething = true;
+                    out += nextVal;
+                }
+            }
+
+            return wroteSomething ? (type.toString() + out) : "";
+        }
+
+        /* BEGIN_DEBUG */
+        /**
+         * Decompresses a compressed bucket log.
+         *
+         * See {@link compressBucketLog} for details
+         *
+         * @param {string} data Data
+         * @param {number} [minBucket] Minimum bucket
+         *
+         * @returns {object} Decompressed log
+         */
+        function decompressBucketLog(data, minBucket) {
+            var out = [], i, j, idx = minBucket || 0, endChar, repeat, num, type;
+
+            if (!data || data.length === 0) {
+                return [];
+            }
+
+            // strip the type out
+            type = parseInt(data[0], 10);
+            data = data.substring(1);
+
+            // decompress string
+            repeat = 1;
+
+            for (i = 0; i < data.length; i++) {
+                if (data[i] === "*") {
+                    // this is a repeating number
+
+                    // move past the "*"
+                    i++;
+
+                    // up to the next * is the repeating count (base 36)
+                    endChar = data.indexOf("*", i);
+                    repeat = parseInt(data.substring(i, endChar), 36);
+
+                    // after is the number
+                    i = endChar;
+                    continue;
+                }
+                else if (data[i] === LARGE_NUMBER_WRAP) {
+                    // this is a number larger than 63
+
+                    // move past the wrap character
+                    i++;
+
+                    // up to the next wrap character is the number (base 36)
+                    endChar = data.indexOf(LARGE_NUMBER_WRAP, i);
+                    num = parseInt(data.substring(i, endChar), 36);
+
+                    // move to this end char
+                    i = endChar;
+                }
+                else {
+                    if (type === COMPRESS_MODE_SMALL_NUMBERS) {
+                        // this digit is a number from 0 to 63
+                        num = decompressBucketLogNumber(data[i]);
+                    }
+                    else if (type === COMPRESS_MODE_LARGE_NUMBERS) {
+                        // look for this digit to end at a comma
+
+                        endChar = data.indexOf(",", i);
+
+                        if (endChar !== -1) {
+                            // another index exists later, read up to that
+                            num = parseInt(data.substring(i, endChar), 36);
+
+                            // move to this end char
+                            i = endChar;
+                        }
+                        else {
+                            // this is the last number
+                            num = parseInt(data.substring(i), 36);
+
+                            // we're done
+                            i = data.length;
+                        }
+                    }
+                    else if (type === COMPRESS_MODE_PERCENT) {
+                        // check if this is 100
+                        if (data.substr(i, 2) === "__") {
+                            num = 100;
+                        }
+                        else {
+                            num = parseInt(data.substr(i, 2), 10);
+                        }
+
+                        // take two characters
+                        i++;
+                    }
+                }
+
+                out[idx] = num;
+                for (j = 1; j < repeat; j++) {
+                    idx++;
+                    out[idx] = num;
+                }
+
+                idx++;
+                repeat = 1;
+            }
+
+            return out;
+        }
+
+        /**
+         * Decompresses a bucket log Base64 number (0 - 63)
+         *
+         * @param {string} input Character
+         *
+         * @returns {number} Base64 number
+         */
+        function decompressBucketLogNumber(input) {
+            if (!input || !input.charCodeAt) {
+                return 0;
+            }
+
+            // convert to ASCII character code
+            var chr = input.charCodeAt(0);
+
+            if (chr >= 48 && chr <= 57) {
+                // 0 - 9
+                return chr - 48;
+            }
+            else if (chr >= 97 && chr <= 122) {
+                // a - z
+                return (chr - 97) + 10;
+            }
+            else if (chr >= 65 && chr <= 90) {
+                // A - Z
+                return (chr - 65) + 36;
+            }
+            else if (chr === 95) {
+                // _
+                return 62;
+            }
+            else if (chr === 45) {
+                // -
+                return 63;
+            }
+            else {
+                // unknown
+                return 0;
+            }
+        }
+
+        /**
+         * Decompresses the log into events
+         *
+         * @param {string} data Compressed log
+         *
+         * @returns {object} Decompressed log
+         */
+        function decompressLog(data) {
+            var val = "", i, j, eventData, events, out = [], evt;
+
+            // each event is separate by a |
+            events = data.split("|");
+
+            for (i = 0; i < events.length; i++) {
+                eventData = events[i].split(",");
+
+                evt = {
+                    type: parseInt(eventData[0][0], 10),
+                    time: parseInt(eventData[0].substring(1), 36)
+                };
+
+                // add all attributes
+                for (j = 1; j < eventData.length; j++) {
+                    evt[eventData[j][0]] = eventData[j].substring(1);
+                }
+
+                out.push(evt);
+            }
+
+            return out;
+        }
+        /* END_DEBUG */
+
+        /**
+         * Timeline data
+         *
+         * Responsible for:
+         *
+         * * Keeping track of counts of events that happen over time (in
+         *   COLLECTION_INTERVAL intervals).
+         * * Keeps a log of raw events.
+         * * Calculates Time to Interactive (TTI) and Visually Ready.
+         *
+         * @class BOOMR.plugins.Continuity.Timeline
+         */
+        var Timeline = function(startTime) {
+            //
+            // Constants
+            //
+            /**
+             * Number of "idle" intervals (of COLLECTION_INTERVAL ms) before
+             * Time to Interactive is called.
+             *
+             * 5 * 100 = 500ms (of no long tasks > 50ms and FPS >= 20)
+             */
+            var TIME_TO_INTERACTIVE_IDLE_INTERVALS = 5;
+
+            /**
+             * For Time to Interactive, minimum FPS.
+             *
+             * ~20 FPS or max ~50ms blocked
+             */
+            var TIME_TO_INTERACTIVE_MIN_FPS = 20;
+
+            /**
+             * For Time to Interactive, minimum FPS per COLLECTION_INTERVAL.
+             */
+            var TIME_TO_INTERACTIVE_MIN_FPS_PER_INTERVAL =
+                TIME_TO_INTERACTIVE_MIN_FPS / (1000 / COLLECTION_INTERVAL);
+
+            //
+            // Local Members
+            //
+
+            // timeline data
+            var data = {};
+
+            // timeline data options
+            var dataOptions = {};
+
+            // timeline log
+            var dataLog = [];
+
+            // time-to-interactive timestamp
+            var tti = 0;
+
+            // visually ready timestamp
+            var visuallyReady = 0;
+
+            // check for pre-Boomerang FPS log
+            if (BOOMR.fpsLog && BOOMR.fpsLog.length) {
+                // start at the first frame instead of now
+                startTime = BOOMR.fpsLog[0] + epoch;
+
+                // NOTE: FrameRateMonitor will remove fpsLog
+            }
+
+            //
+            // Functions
+            //
+            /**
+             * Registers a monitor
+             *
+             * @param {string} type Type
+             * @param {number} [compressMode] Compression mode
+             * @param {boolean} [backfillLast] Whether or not to backfill missing entries
+             * with the most recent value.
+             */
+            function register(type, compressMode, backfillLast) {
+                if (!data[type]) {
+                    data[type] = [];
+                }
+
+                dataOptions[type] = {
+                    compressMode: compressMode ? compressMode : COMPRESS_MODE_SMALL_NUMBERS,
+                    backfillLast: backfillLast
+                };
+            }
+
+            /**
+             * Gets the current time bucket
+             *
+             * @returns {number} Current time bucket
+             */
+            function getTimeBucket() {
+                return Math.floor((BOOMR.now() - startTime) / COLLECTION_INTERVAL);
+            }
+
+            /**
+             * Sets data for the specified type.
+             *
+             * The type should be registered first via {@link register}.
+             *
+             * @param {string} type Type
+             * @param {number} [value] Value
+             * @param {number} [bucket] Time bucket
+             */
+            function set(type, value, bucket) {
+                if (typeof bucket === "undefined") {
+                    bucket = getTimeBucket();
+                }
+
+                if (!data[type]) {
+                    return;
+                }
+
+                data[type][bucket] = value;
+            }
+
+            /**
+             * Increments data for the specified type
+             *
+             * The type should be registered first via {@link register}.
+             *
+             * @param {string} type Type
+             * @param {number} [value] Value
+             * @param {number} [bucket] Time bucket
+             */
+            function increment(type, value, bucket) {
+                if (typeof bucket === "undefined") {
+                    bucket = getTimeBucket();
+                }
+
+                if (typeof value === "undefined") {
+                    value = 1;
+                }
+
+                if (!data[type]) {
+                    return;
+                }
+
+                if (!data[type][bucket]) {
+                    data[type][bucket] = 0;
+                }
+
+                data[type][bucket] += value;
+            }
+
+            /**
+             * Log an event
+             *
+             * @param {string} type Type
+             * @param {number} [bucket] Time bucket
+             * @param {array} [val] Event data
+             */
+            function log(type, bucket, val) {
+                if (typeof bucket === "undefined") {
+                    bucket = getTimeBucket();
+                }
+
+                dataLog.push({
+                    type: type,
+                    time: bucket,
+                    val: val
+                });
+            }
+
+            /**
+             * Gets stats for a type since the specified start time.
+             *
+             * @param {string} type Type
+             * @param {number} since Start time
+             *
+             * @returns {object} Stats for the type
+             */
+            function getStats(type, since) {
+                var count = 0,
+                    total = 0,
+                    min = Infinity,
+                    max = 0,
+                    val,
+                    sinceBucket = Math.floor((since - startTime) / COLLECTION_INTERVAL);
+
+                if (!data[type]) {
+                    return 0;
+                }
+
+                for (var bucket in data[type]) {
+                    bucket = parseInt(bucket, 10);
+
+                    if (data[type].hasOwnProperty(bucket)) {
+                        if (bucket >= sinceBucket) {
+                            val = data[type][bucket];
+
+                            // calculate count, total and minimum
+                            count++;
+                            total += val;
+
+                            min = Math.min(min, val);
+                            max = Math.max(max, val);
+                        }
+                    }
+                }
+
+                // return the stats
+                return {
+                    total: total,
+                    count: count,
+                    min: min,
+                    max: max
+                };
+            }
+
+            /**
+             * Given a CSS selector, determine the load time of any IMGs matching
+             * that selector and/or IMGs underneath it.
+             *
+             * @param {string} selector CSS selector
+             *
+             * @returns {number} Last image load time
+             */
+            function determineImageLoadTime(selector) {
+                var combinedSelector, elements, latestTs = 0, i, j, src, entries;
+
+                // check to see if we have querySelectorAll available
+                if (!BOOMR.window ||
+                    !BOOMR.window.document ||
+                    typeof BOOMR.window.document.querySelectorAll !== "function") {
+                    // can't use querySelectorAll
+                    return 0;
+                }
+
+                // check to see if we have ResourceTiming available
+                if (!p ||
+                    typeof p.getEntriesByType !== "function") {
+                    // can't use ResourceTiming
+                    return 0;
+                }
+
+                // find any images matching this selector or underneath this selector
+                combinedSelector = selector + ", " + selector + " * img";
+
+                // use QSA to find all matching
+                elements = BOOMR.window.document.querySelectorAll(combinedSelector);
+                if (elements && elements.length) {
+                    for (i = 0; i < elements.length; i++) {
+                        src = elements[i].src;
+                        if (src) {
+                            entries = p.getEntriesByName(src);
+                            if (entries && entries.length) {
+                                for (j = 0; j < entries.length; j++) {
+                                    latestTs = Math.max(latestTs, entries[j].responseEnd);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                return latestTs ? Math.floor(latestTs + epoch) : 0;
+            }
+
+            /**
+             * Determine Visually Ready time.  This is the last of:
+             * 1. First Paint (if available)
+             * 2. domContentLoadedEventEnd
+             * 3. Hero Images are loaded (if configured)
+             * 4. Framework Ready (if configured)
+             *
+             * @returns {number|undefined} Timestamp, if everything is ready, or
+             *    `undefined` if not
+             */
+            function determineVisuallyReady() {
+                var latestTs = 0;
+
+                // start with Framework Ready (if configured)
+                if (impl.ttiWaitForFrameworkReady) {
+                    if (!impl.frameworkReady) {
+                        return;
+                    }
+
+                    latestTs = impl.frameworkReady;
+                }
+
+                // use IE's First Paint (if available) or
+                // use Chrome's firstPaintTime (if available)
+                if (p && p.timing && p.timing.msFirstPaint) {
+                    latestTs = Math.max(latestTs, p.timing.msFirstPaint);
+                }
+                else if (BOOMR.window &&
+                    BOOMR.window.chrome &&
+                    typeof BOOMR.window.chrome.loadTimes === "function") {
+                    var loadTimes = BOOMR.window.chrome.loadTimes();
+                    if (loadTimes && loadTimes.firstPaintTime) {
+                        latestTs = Math.max(latestTs, loadTimes.firstPaintTime * 1000);
+                    }
+                }
+
+                // Use domContentLoadedEventEnd (if available)
+                if (p && p.timing && p.timing.domContentLoadedEventEnd) {
+                    latestTs = Math.max(latestTs, p.timing.domContentLoadedEventEnd);
+                }
+
+                // look up any Hero Images (if configured)
+                if (impl.ttiWaitForHeroImages) {
+                    var heroLoadTime = determineImageLoadTime(impl.ttiWaitForHeroImages);
+
+                    if (heroLoadTime) {
+                        latestTs = Math.max(latestTs, heroLoadTime);
+                    }
+                }
+
+                return latestTs;
+            }
+
+            /**
+             * Adds the compressed data log to the beacon
+             */
+            function addCompressedLogToBeacon() {
+                var val = "";
+
+                for (var i = 0; i < dataLog.length; i++) {
+                    var evt = dataLog[i];
+
+                    if (i !== 0) {
+                        // add a separator between events
+                        val += "|";
+                    }
+
+                    // add the type
+                    val += evt.type;
+
+                    // add the time: offset from epoch, base36
+                    val += Math.round(evt.time - epoch).toString(36);
+
+                    // add each parameter
+                    for (var param in evt.val) {
+                        if (evt.val.hasOwnProperty(param)) {
+                            val += "," + param;
+
+                            if (typeof evt.val[param] === "number") {
+                                // base36
+                                val += evt.val[param].toString(36);
+                            }
+                            else {
+                                val += evt.val[param];
+                            }
+                        }
+                    }
+                }
+
+                if (val !== "") {
+                    impl.addToBeacon("c.l", val);
+                }
+            }
+
+            /**
+             * Gets the bucket log for our data
+             *
+             * @param {string} type Type
+             * @param {number} sinceBucket Lowest bucket
+             *
+             * @returns {string} Compressed log of our data
+             */
+            function getCompressedBucketLogFor(type, since) {
+                return compressBucketLog(
+                    dataOptions[type].compressMode,
+                    dataOptions[type].backfillLast,
+                    data[type],
+                    since !== 0 ? Math.floor((since - startTime) / COLLECTION_INTERVAL) : 0,
+                    getTimeBucket());
+            }
+
+            /**
+             * Adds the timeline to the beacon compressed.
+             *
+             * @param {number} [since] Since timestamp
+             */
+            function addCompressedTimelineToBeacon(since) {
+                var type, compressedLog;
+
+                for (type in data) {
+                    if (data.hasOwnProperty((type))) {
+                        // get the compressed data
+                        compressedLog = getCompressedBucketLogFor(type, since);
+
+                        // add to the beacon
+                        if (compressedLog !== "") {
+                            impl.addToBeacon("c.t." + type, compressedLog);
+                        }
+                    }
+                }
+            }
+
+            /**
+             * Analyzes metrics such as Time To Interactive
+             *
+             * @param {number} timeOfLastBeacon Time we last sent a beacon
+             */
+            function analyze(timeOfLastBeacon) {
+                var endBucket = getTimeBucket(),
+                    j = 0,
+                    idleIntervals = 0;
+
+                // add log
+                if (impl.sendLog && typeof timeOfLastBeacon !== "undefined") {
+                    addCompressedLogToBeacon();
+                }
+
+                // add timeline
+                if (impl.sendTimeline && typeof timeOfLastBeacon !== "undefined") {
+                    addCompressedTimelineToBeacon(timeOfLastBeacon);
+                }
+
+                if (tti) {
+                    return;
+                }
+
+                // need to get Visually Ready first
+                if (!visuallyReady) {
+                    visuallyReady = determineVisuallyReady();
+                    if (!visuallyReady) {
+                        return;
+                    }
+                }
+
+                // add Visually Ready to the beacon
+                impl.addToBeacon("c.tti.vr", externalMetrics.timeToVisuallyReady());
+
+                // Calculate TTI
+                if (!data.longtask && !data.fps) {
+                    // can't calculate TTI
+                    return;
+                }
+
+                // determine the first bucket we'd use
+                var startBucket = Math.floor((visuallyReady - startTime) / COLLECTION_INTERVAL);
+
+                for (j = startBucket; j <= endBucket; j++) {
+                    if (data.longtask && data.longtask[j]) {
+                        // had a long task during this interval
+                        idleIntervals = 0;
+                        continue;
+                    }
+
+                    if (data.fps && (!data.fps[j] || data.fps[j] < TIME_TO_INTERACTIVE_MIN_FPS_PER_INTERVAL)) {
+                        // No FPS or less than 20 FPS during this interval
+                        idleIntervals = 0;
+                        continue;
+                    }
+
+                    if (data.interdly && data.interdly[j]) {
+                        // a delayed interaction happened
+                        idleIntervals = 0;
+                        continue;
+                    }
+
+                    // this was an idle interval
+                    idleIntervals++;
+
+                    // if we've found enough idle intervals, mark TTI as the beginning
+                    // of this idle period
+                    if (idleIntervals >= TIME_TO_INTERACTIVE_IDLE_INTERVALS) {
+                        tti = startTime + ((j - TIME_TO_INTERACTIVE_IDLE_INTERVALS) * COLLECTION_INTERVAL);
+                        break;
+                    }
+                }
+
+                // we were able to calculate a TTI
+                if (tti > 0) {
+                    impl.addToBeacon("c.tti", externalMetrics.timeToInteractive());
+                }
+            }
+
+            //
+            // External metrics
+            //
+
+            /**
+             * Time to Interactive
+             */
+            externalMetrics.timeToInteractive = function() {
+                if (tti) {
+                    // milliseconds since nav start
+                    return tti - epoch;
+                }
+
+                // no data
+                return;
+            };
+
+            /**
+             * Time to Visually Ready
+             */
+            externalMetrics.timeToVisuallyReady = function() {
+                if (visuallyReady) {
+                    // milliseconds since nav start
+                    return visuallyReady - epoch;
+                }
+
+                // no data
+                return;
+            };
+
+            externalMetrics.log = function() {
+                return dataLog;
+            };
+
+            /**
+             * Disables the monitor
+             */
+            function stop() {
+                data = {};
+                dataLog = [];
+            }
+
+            /**
+             * Resets on beacon
+             */
+            function onBeacon() {
+                // clear the buckets
+                for (var type in data) {
+                    if (data.hasOwnProperty(type)) {
+                        data[type] = [];
+                    }
+                }
+
+                // reset the data log
+                dataLog = [];
+            }
+
+            return {
+                register: register,
+                set: set,
+                log: log,
+                increment: increment,
+                getTimeBucket: getTimeBucket,
+                getStats: getStats,
+                analyze: analyze,
+                stop: stop,
+                onBeacon: onBeacon
+            };
+        };
+
+        /**
+         * Monitors LongTasks
+         *
+         * @class BOOMR.plugins.Continuity.LongTaskMonitor
+         */
+        var LongTaskMonitor = function(w, t) {
+            if (!w.PerformanceObserver || !w.PerformanceLongTaskTiming) {
+                return;
+            }
+
+            //
+            // Constants
+            //
+            /**
+             * LongTask attribution types
+             */
+            var ATTRIBUTION_TYPES = {
+                "unknown": 0,
+                "self": 1,
+                "same-origin-ancestor": 2,
+                "same-origin-descendant": 3,
+                "same-origin": 4,
+                "cross-origin-ancestor": 5,
+                "cross-origin-descendant": 6,
+                "cross-origin-unreachable": 7,
+                "multiple-contexts": 8
+            };
+
+            /**
+             * LongTask culprit attribution names
+             */
+            var CULPRIT_ATTRIBUTION_NAMES = {
+                "unknown": 0,
+                "script": 1,
+                "layout": 2
+            };
+
+            /**
+             * LongTask culprit types
+             */
+            var CULPRIT_TYPES = {
+                "unknown": 0,
+                "iframe": 1,
+                "embed": 2,
+                "object": 3
+            };
+
+            //
+            // Local Members
+            //
+
+            // PerformanceObserver
+            var perfObserver = new w.PerformanceObserver(onPerformanceObserver);
+
+            try {
+                perfObserver.observe({ entryTypes: ["longtask"] });
+            }
+            catch (e) {
+                // longtask not supported
+                return;
+            }
+
+            // register this type
+            t.register("longtask", COMPRESS_MODE_SMALL_NUMBERS);
+
+            // Long Tasks array
+            var longTasks = [];
+
+            // whether or not we're enabled
+            var enabled = true;
+
+            // total time of long tasks
+            var longTasksTime = 0;
+
+            /**
+             * Callback for the PerformanceObserver
+             */
+            function onPerformanceObserver(list) {
+                var entries, i;
+
+                if (!enabled) {
+                    return;
+                }
+
+                // just capture all of the data for now, we'll analyze at the beacon
+                entries = list.getEntries();
+                Array.prototype.push.apply(longTasks, entries);
+
+                // add total time and count of long tasks
+                for (i = 0; i < entries.length; i++) {
+                    longTasksTime += entries[i].duration;
+                }
+
+                // add to the timeline
+                t.increment("longtask", entries.length);
+            }
+
+            /**
+             * Gets the current list of tasks
+             *
+             * @returns {PerformanceEntry[]} Tasks
+             */
+            function getTasks() {
+                return longTasks;
+            }
+
+            /**
+             * Clears the Long Tasks
+             */
+            function clearTasks() {
+                longTasks = [];
+
+                longTasksTime = 0;
+            }
+
+            /**
+             * Analyzes LongTasks
+             */
+            function analyze(startTime) {
+                var i, j, task, obj, objs = [], attrs = [], attr;
+
+                if (longTasks.length === 0) {
+                    return;
+                }
+
+                for (i = 0; i < longTasks.length; i++) {
+                    task = longTasks[i];
+
+                    // compress the object a bit
+                    obj = {
+                        s: Math.round(task.startTime).toString(36),
+                        d: Math.round(task.duration).toString(36),
+                        n: ATTRIBUTION_TYPES[task.name] ? ATTRIBUTION_TYPES[task.name] : 0
+                    };
+
+                    attrs = [];
+
+                    for (j = 0; j < task.attribution.length; j++) {
+                        attr = task.attribution[j];
+
+                        // skip script/iframe with no attribution
+                        if (attr.name === "script" &&
+                            attr.containerType === "iframe" &&
+                            !attr.containerName &&
+                            !attr.containerId && !attr.containerSrc) {
+                            continue;
+                        }
+
+                        // only use containerName if not the same as containerId
+                        var containerName = attr.containerName ? attr.containerName : undefined;
+                        var containerId = attr.containerId ? attr.containerId : undefined;
+                        if (containerName === containerId) {
+                            containerName = undefined;
+                        }
+
+                        // only use containerSrc if containerId is undefined
+                        var containerSrc = containerId === undefined ? attr.containerSrc : undefined;
+
+                        attrs.push({
+                            a: CULPRIT_ATTRIBUTION_NAMES[attr.name] ? CULPRIT_ATTRIBUTION_NAMES[attr.name] : 0,
+                            t: CULPRIT_TYPES[attr.containerType] ? CULPRIT_TYPES[attr.containerType] : 0,
+                            n: containerName,
+                            i: containerId,
+                            s: containerSrc
+                        });
+                    }
+
+                    if (attrs.length > 0) {
+                        obj.a = attrs;
+                    }
+
+                    objs.push(obj);
+                }
+
+                // add data to beacon
+                impl.addToBeacon("c.lt.n", externalMetrics.longTasksCount(), true);
+                impl.addToBeacon("c.lt.tt", externalMetrics.longTasksTime());
+
+                impl.addToBeacon("c.lt", compressJson(objs));
+            }
+
+            /**
+             * Disables the monitor
+             */
+            function stop() {
+                enabled = false;
+
+                perfObserver.disconnect();
+
+                clearTasks();
+            }
+
+            /**
+             * Resets on beacon
+             */
+            function onBeacon() {
+                clearTasks();
+            }
+
+            //
+            // External metrics
+            //
+
+            /**
+             * Total time of LongTasks (ms)
+             */
+            externalMetrics.longTasksTime = function() {
+                return longTasksTime;
+            };
+
+            /**
+             * Number of LongTasks
+             */
+            externalMetrics.longTasksCount = function() {
+                return longTasks.length;
+            };
+
+            return {
+                getTasks: getTasks,
+                clearTasks: clearTasks,
+                analyze: analyze,
+                stop: stop,
+                onBeacon: onBeacon
+            };
+        };
+
+        /**
+         * Monitors Page Busy if LongTasks isn't supported
+         *
+         * @class BOOMR.plugins.Continuity.PageBusyMonitor
+         */
+        var PageBusyMonitor = function(w, t) {
+            // register this type
+            t.register("busy", COMPRESS_MODE_PERCENT);
+
+            //
+            // Constants
+            //
+
+            /**
+             * How frequently to poll (ms)
+             */
+            var POLLING_INTERVAL = 25;
+
+            /**
+             * How much deviation from the expected time to allow (ms)
+             */
+            var ALLOWED_DEVIATION_MS = 4;
+
+            /**
+             * How often to report on Page Busy (ms)
+             */
+            var REPORT_INTERVAL = 100;
+
+            /**
+             * How many polls there were per-report
+             */
+            var POLLS_PER_REPORT =
+                REPORT_INTERVAL / POLLING_INTERVAL;
+
+            //
+            // Local Members
+            //
+
+            // last time we ran
+            var last = BOOMR.now();
+
+            // total callbacks
+            var total = 0;
+
+            // late callbacks
+            var late = 0;
+
+            // overall total and late callbacks (reset on beacon)
+            var overallTotal = 0;
+            var overallLate = 0;
+
+            // whether or not we're enabled
+            var enabled = true;
+
+            // intervals
+            var pollInterval = false;
+            var reportInterval = false;
+
+            /**
+             * Polling interval
+             */
+            function onPoll() {
+                var now = BOOMR.now();
+                var delta = now - last;
+                last = now;
+
+                // if we're more than 2x the polling interval
+                // + deviation, we missed one period completely
+                while (delta > ((POLLING_INTERVAL * 2) + ALLOWED_DEVIATION_MS)) {
+                    total++;
+                    late++;
+
+                    // adjust, try again
+                    delta -= POLLING_INTERVAL;
+                }
+
+                // total intervals increased by one
+                total++;
+
+                // late intervals increased by one if we're more than the interval + deviation
+                if (delta > (POLLING_INTERVAL + ALLOWED_DEVIATION_MS)) {
+                    late++;
+                }
+            }
+
+            /**
+             * Each reporting interval, log page busy
+             */
+            function onReport() {
+                var reportTime = t.getTimeBucket();
+                var curTime = reportTime;
+
+                // update the total stats
+                overallTotal += total;
+                overallLate += late;
+
+                // if we had more polls than we expect in each
+                // collection period, we must not have been able
+                // to report, so assume those periods were 100%
+                while (total > POLLS_PER_REPORT) {
+                    t.set("busy", 100, --curTime);
+
+                    // reset the period by one
+                    total -= POLLS_PER_REPORT;
+                    late -= Math.max(POLLS_PER_REPORT, 0);
+                }
+
+                t.set("busy", Math.round(late / total * 100), reportTime);
+
+                // reset stats
+                total = 0;
+                late = 0;
+            }
+
+            /**
+             * Analyzes Page Busy
+             */
+            function analyze(startTime) {
+                // add data to beacon
+                impl.addToBeacon("c.b", externalMetrics.pageBusy());
+            }
+
+            /**
+             * Disables the monitor
+             */
+            function stop() {
+                enabled = false;
+
+                if (pollInterval) {
+                    clearInterval(pollInterval);
+                    pollInterval = false;
+                }
+
+                if (reportInterval) {
+                    clearInterval(reportInterval);
+                    reportInterval = false;
+                }
+            }
+
+            /**
+             * Resets on beacon
+             */
+            function onBeacon() {
+                overallTotal = 0;
+                overallLate = 0;
+            }
+
+            //
+            // External metrics
+            //
+
+            /**
+             * Total Page Busy time
+             */
+            externalMetrics.pageBusy = function() {
+                if (overallTotal === 0) {
+                    return 0;
+                }
+
+                return Math.round(overallLate / overallTotal * 100);
+            };
+
+            //
+            // Setup
+            //
+            pollInterval = setInterval(onPoll, POLLING_INTERVAL);
+            reportInterval = setInterval(onReport, REPORT_INTERVAL);
+
+            return {
+                analyze: analyze,
+                stop: stop,
+                onBeacon: onBeacon
+            };
+        };
+
+        /**
+         * Monitors framerate (FPS)
+         *
+         * @class BOOMR.plugins.Continuity.FrameRateMonitor
+         */
+        var FrameRateMonitor = function(w, t) {
+            // register this type
+            t.register("fps", COMPRESS_MODE_SMALL_NUMBERS);
+
+            //
+            // Constants
+            //
+
+            // long frame maximum milliseconds
+            var LONG_FRAME_MAX = 50;
+
+            //
+            // Local Members
+            //
+
+            // total frames seen
+            var totalFrames = 0;
+
+            // long frames
+            var longFrames = 0;
+
+            // time we started monitoring
+            var frameStartTime;
+
+            // last frame we saw
+            var lastFrame;
+
+            // whether or not we're enabled
+            var enabled = true;
+
+            // check for pre-Boomerang FPS log
+            if (BOOMR.fpsLog && BOOMR.fpsLog.length) {
+                lastFrame = frameStartTime = BOOMR.fpsLog[0] + epoch;
+
+                // transition any FPS log events to our timeline
+                for (var i = 0; i < BOOMR.fpsLog.length; i++) {
+                    var ts = epoch + BOOMR.fpsLog[i];
+
+                    // update the frame count for this time interval
+                    t.increment("fps", 1, Math.floor((ts - frameStartTime) / COLLECTION_INTERVAL));
+
+                    // calculate how long this frame took
+                    if (ts - lastFrame >= LONG_FRAME_MAX) {
+                        longFrames++;
+                    }
+
+                    // last frame timestamp
+                    lastFrame = ts;
+                }
+
+                totalFrames = BOOMR.fpsLog.length;
+
+                delete BOOMR.fpsLog;
+            }
+            else {
+                frameStartTime = BOOMR.now();
+            }
+
+            /**
+             * requestAnimationFrame callback
+             */
+            function frame() {
+                var now = BOOMR.now();
+
+                if (!enabled) {
+                    return;
+                }
+
+                // calculate how long this frame took
+                if (now - lastFrame >= LONG_FRAME_MAX) {
+                    longFrames++;
+                }
+
+                // last frame timestamp
+                lastFrame = now;
+
+                // keep track of total frames we've seen
+                totalFrames++;
+
+                // increment the FPS
+                t.increment("fps");
+
+                // request the next frame
+                w.requestAnimationFrame(frame);
+            }
+
+            /**
+             * Analyzes FPS
+             */
+            function analyze(startTime) {
+                impl.addToBeacon("c.f", externalMetrics.fps());
+                impl.addToBeacon("c.f.d", externalMetrics.fpsDuration());
+                impl.addToBeacon("c.f.m", externalMetrics.fpsMinimum());
+                impl.addToBeacon("c.f.l", externalMetrics.fpsLongFrames());
+                impl.addToBeacon("c.f.s", externalMetrics.fpsStart());
+            }
+
+            /**
+             * Disables the monitor
+             */
+            function stop() {
+                enabled = false;
+                frameStartTime = 0;
+            }
+
+            /**
+             * Resets on beacon
+             */
+            function onBeacon() {
+                if (enabled) {
+                    // restart to now
+                    frameStartTime = BOOMR.now();
+                }
+
+                totalFrames = 0;
+                longFrames = 0;
+            }
+
+            // start the first frame
+            w.requestAnimationFrame(frame);
+
+            //
+            // External metrics
+            //
+
+            /**
+             * Framerate since fpsStart
+             */
+            externalMetrics.fps = function() {
+                var dur = externalMetrics.fpsDuration();
+                if (dur) {
+                    return Math.floor(totalFrames / (dur / 1000));
+                }
+            };
+
+            /**
+             * How long FPS was being tracked for
+             */
+            externalMetrics.fpsDuration = function() {
+                if (frameStartTime) {
+                    return BOOMR.now() - frameStartTime;
+                }
+            };
+
+            /**
+             * Minimum FPS during the period
+             */
+            externalMetrics.fpsMinimum = function() {
+                var dur = externalMetrics.fpsDuration();
+                if (dur) {
+                    var min = t.getStats("fps", frameStartTime).min;
+                    return min !== Infinity ? min : undefined;
+                }
+            };
+
+            /**
+             * Number of long frames (over 18ms)
+             */
+            externalMetrics.fpsLongFrames = function() {
+                return longFrames;
+            };
+
+            /**
+             * When FPS tracking started (base 36)
+             */
+            externalMetrics.fpsStart = function() {
+                return frameStartTime ? frameStartTime.toString(36) : 0;
+            };
+
+            return {
+                analyze: analyze,
+                stop: stop,
+                onBeacon: onBeacon
+            };
+        };
+
+        /**
+         * Monitors scrolling
+         *
+         * @class BOOMR.plugins.Continuity.ScrollMonitor
+         */
+        var ScrollMonitor = function(w, t, i) {
+            if (!w || !w.document || !w.document.body || !w.document.documentElement) {
+                // something's wrong with the DOM, abort
+                return;
+            }
+
+            //
+            // Constants
+            //
+
+            // number of milliseconds between each distinct scroll
+            var DISTINCT_SCROLL_SECONDS = 2000;
+
+            //
+            // Local Members
+            //
+
+            // last scroll Y
+            var lastY = 0;
+
+            // scroll % this period
+            var intervalScrollPct = 0;
+
+            // scroll % total
+            var totalScrollPct = 0;
+
+            // number of scroll events
+            var scrollCount = 0;
+
+            // total scroll pixels
+            var scrollPixels = 0;
+
+            // number of distinct scrolls (scroll which happened
+            // over DISTINCT_SCROLL_SECONDS seconds apart)
+            var distinctScrollCount = 0;
+
+            // last time we scrolled
+            var lastScroll = 0;
+
+            // collection interval id
+            var collectionInterval = false;
+
+            // body and html element
+            var body = w.document.body;
+            var html = w.document.documentElement;
+
+            // register this type
+            t.register("scroll", COMPRESS_MODE_SMALL_NUMBERS);
+            t.register("scrollpct", COMPRESS_MODE_PERCENT);
+
+            /**
+             * Fired when a scroll event happens
+             *
+             * @param {Event} e Scroll event
+             */
+            function onScroll(e) {
+                var now = BOOMR.now();
+
+                scrollCount++;
+
+                // see if this is a unique scroll
+                if (now - lastScroll > DISTINCT_SCROLL_SECONDS) {
+                    distinctScrollCount++;
+                }
+
+                lastScroll = now;
+
+                // height of the document
+                var height = Math.max(
+                    body.scrollHeight,
+                    body.offsetHeight,
+                    html.clientHeight,
+                    html.scrollHeight,
+                    html.offsetHeight) - w.innerHeight;
+
+                // determine how many pixels were scrolled
+                var curY = w.scrollY;
+                var diffY = Math.abs(lastY - curY);
+
+                scrollPixels += diffY;
+
+                // update the timeline
+                t.increment("scroll", diffY);
+
+                // add to the log
+                t.log(LOG_TYPE_SCROLL, now, {
+                    y: curY
+                });
+
+                // update the interaction monitor
+                i.interact("scroll", now, e);
+
+                // calculate percentage of document scrolled
+                intervalScrollPct += Math.round(diffY / height * 100);
+                totalScrollPct += Math.round(diffY / height * 100);
+
+                lastY = curY;
+            }
+
+            /**
+             * Reports on the number of scrolls seen
+             */
+            function reportScroll() {
+                var pct = Math.min(intervalScrollPct, 100);
+
+                if (pct !== 0) {
+                    t.set("scrollpct", pct);
+                }
+
+                // reset count
+                intervalScrollPct = 0;
+            }
+
+            /**
+             * Analyzes Scrolling events
+             */
+            function analyze(startTime) {
+                impl.addToBeacon("c.s", externalMetrics.scrollCount());
+                impl.addToBeacon("c.s.p", externalMetrics.scrollPct());
+                impl.addToBeacon("c.s.y", externalMetrics.scrollPixels());
+                impl.addToBeacon("c.s.d", externalMetrics.scrollDistinct());
+            }
+
+            /**
+             * Disables the monitor
+             */
+            function stop() {
+                if (collectionInterval) {
+                    clearInterval(collectionInterval);
+
+                    collectionInterval = false;
+                }
+
+                w.removeEventListener("scroll", onScroll);
+            }
+
+            /**
+             * Resets on beacon
+             */
+            function onBeacon() {
+                totalScrollPct = 0;
+                scrollCount = 0;
+                scrollPixels = 0;
+                distinctScrollCount = 0;
+            }
+
+            //
+            // External metrics
+            //
+
+            /**
+             * Percentage of the screen that was scrolled.
+             *
+             * All the way to the bottom = 100%
+             */
+            externalMetrics.scrollPct = function() {
+                return totalScrollPct;
+            };
+
+            /**
+             * Number of scrolls
+             */
+            externalMetrics.scrollCount = function() {
+                return scrollCount;
+            };
+
+            /**
+             * Number of scrolls (more than two seconds apart)
+             */
+            externalMetrics.scrollDistinct = function() {
+                return distinctScrollCount;
+            };
+
+            /**
+             * Number of pixels scrolled
+             */
+            externalMetrics.scrollPixels = function() {
+                return scrollPixels;
+            };
+
+            // startup
+            w.addEventListener("scroll", onScroll, false);
+
+            collectionInterval = setInterval(reportScroll, COLLECTION_INTERVAL);
+
+            return {
+                analyze: analyze,
+                stop: stop,
+                onBeacon: onBeacon
+            };
+        };
+
+        /**
+         * Monitors mouse clicks
+         *
+         * @class BOOMR.plugins.Continuity.ClickMonitor
+         */
+        var ClickMonitor = function(w, t, i) {
+            // register this type
+            t.register("click", COMPRESS_MODE_SMALL_NUMBERS);
+
+            //
+            // Constants
+            //
+
+            // number of pixels area for Rage Clicks
+            var PIXEL_AREA = 10;
+
+            // number of clicks in the same area to trigger a Rage Click
+            var RAGE_CLICK_THRESHOLD = 3;
+
+            //
+            // Local Members
+            //
+
+            // number of click events
+            var clickCount = 0;
+
+            // number of clicks in the same PIXEL_AREA area
+            var sameClicks = 0;
+
+            // number of Rage Clicks
+            var rageClicks = 0;
+
+            // last coordinates
+            var x = 0;
+            var y = 0;
+
+            // last click target
+            var lastTarget = null;
+
+            /**
+             * Fired when a `click` event happens.
+             *
+             * @param {Event} e Event
+             */
+            function onClick(e) {
+                var now = BOOMR.now();
+
+                var newX = e.clientX;
+                var newY = e.clientY;
+
+                // track total number of clicks
+                clickCount++;
+
+                // calculate number of pixels moved
+                var pixels = Math.round(
+                    Math.sqrt(Math.pow(y - newY, 2) +
+                    Math.pow(x - newX, 2)));
+
+                // track Rage Clicks
+                if (lastTarget === e.target || pixels <= PIXEL_AREA) {
+                    sameClicks++;
+
+                    if ((sameClicks + 1) >= RAGE_CLICK_THRESHOLD) {
+                        rageClicks++;
+                    }
+                }
+                else {
+                    sameClicks = 0;
+                }
+
+                // track last click coordinates and element
+                x = newX;
+                y = newY;
+                lastTarget = e.target;
+
+                // update the timeline
+                t.increment("click");
+
+                // add to the log
+                t.log(LOG_TYPE_CLICK, now, {
+                    x: newX,
+                    y: newY
+                });
+
+                // update the interaction monitor
+                i.interact("click", now, e);
+            }
+
+            /**
+             * Analyzes Click events
+             */
+            function analyze(startTime) {
+                impl.addToBeacon("c.c", externalMetrics.clicksCount());
+                impl.addToBeacon("c.c.r", externalMetrics.clicksRage());
+            }
+
+            /**
+             * Disables the monitor
+             */
+            function stop() {
+                w.document.removeEventListener("click", onClick);
+            }
+
+            /**
+             * Resets on beacon
+             */
+            function onBeacon() {
+                clickCount = 0;
+                sameClicks = 0;
+                rageClicks = 0;
+            }
+
+            //
+            // External metrics
+            //
+            externalMetrics.clicksCount = function() {
+                return clickCount;
+            };
+
+            externalMetrics.clicksRage = function() {
+                return rageClicks;
+            };
+
+            //
+            // Startup
+            //
+            w.document.addEventListener("click", onClick, false);
+
+            return {
+                analyze: analyze,
+                stop: stop,
+                onBeacon: onBeacon
+            };
+        };
+
+        /**
+         * Monitors keyboard events
+         *
+         * @class BOOMR.plugins.Continuity.KeyMonitor
+         */
+        var KeyMonitor = function(w, t, i) {
+            // register this type
+            t.register("key", COMPRESS_MODE_SMALL_NUMBERS);
+
+            //
+            // Local members
+            //
+
+            // key presses
+            var keyCount = 0;
+
+            // esc key presses
+            var escKeyCount = 0;
+
+            /**
+             * Fired on key down
+             *
+             * @param {Event} e keydown event
+             */
+            function onKeyDown(e) {
+                var now = BOOMR.now();
+
+                keyCount++;
+
+                if (e.keyCode === 27) {
+                    escKeyCount++;
+                }
+
+                // update the timeline
+                t.increment("key");
+
+                // add to the log (don't track the actual keys)
+                t.log(LOG_TYPE_KEY, now);
+
+                // update the interaction monitor
+                i.interact("key", now, e);
+            }
+
+            /**
+             * Analyzes Key events
+             */
+            function analyze(startTime) {
+                impl.addToBeacon("c.k", externalMetrics.keyCount());
+                impl.addToBeacon("c.k.e", externalMetrics.keyEscapes());
+            }
+
+            /**
+             * Disables the monitor
+             */
+            function stop() {
+                w.document.removeEventListener("keydown", onKeyDown);
+            }
+
+            /**
+             * Resets on beacon
+             */
+            function onBeacon() {
+                keyCount = 0;
+                escKeyCount = 0;
+            }
+
+            //
+            // External metrics
+            //
+            externalMetrics.keyCount = function() {
+                return keyCount;
+            };
+
+            externalMetrics.keyEscapes = function() {
+                return escKeyCount;
+            };
+
+            // start
+            w.document.addEventListener("keydown", onKeyDown, false);
+
+            return {
+                analyze: analyze,
+                stop: stop,
+                onBeacon: onBeacon
+            };
+        };
+
+        /**
+         * Monitors mouse movement
+         *
+         * @class BOOMR.plugins.Continuity.MouseMonitor
+         */
+        var MouseMonitor = function(w, t, i) {
+            // register the mouse movements and overall percentage moved
+            t.register("mouse", COMPRESS_MODE_SMALL_NUMBERS);
+            t.register("mousepct", COMPRESS_MODE_PERCENT);
+
+            //
+            // Constants
+            //
+
+            /**
+             * Minimum number of pixels that change from last before logging
+             */
+            var MIN_LOG_PIXEL_CHANGE = 10;
+
+            /**
+             * Mouse log interval
+             */
+            var REPORT_LOG_INTERVAL = 250;
+
+            //
+            // Local members
+            //
+
+            // last movement coordinates
+            var lastX = 0;
+            var lastY = 0;
+
+            // last reported X/Y
+            var lastLogX = 0;
+            var lastLogY = 0;
+
+            // mouse move screen percent this interval
+            var intervalMousePct = 0;
+
+            // total mouse move percent
+            var totalMousePct = 0;
+
+            // total mouse move pixels
+            var totalMousePixels = 0;
+
+            // interval ids
+            var reportMousePctInterval = false;
+            var reportMouseLogInterval = false;
+
+            // screen pixel count
+            var screenPixels = Math.round(Math.sqrt(
+                Math.pow(w.innerHeight, 2) +
+                Math.pow(w.innerWidth, 2)));
+
+            /**
+             * Fired when a `mousemove` event happens.
+             *
+             * @param {Event} e Event
+             */
+            function onMouseMove(e) {
+                var now = BOOMR.now();
+
+                var newX = e.clientX;
+                var newY = e.clientY;
+
+                // calculate number of pixels moved
+                var pixels = Math.round(Math.sqrt(Math.pow(lastY - newY, 2) +
+                                        Math.pow(lastX - newX, 2)));
+
+                // calculate percentage of screen moved (upper-left to lower-right = 100%)
+                var newPct = Math.round(pixels / screenPixels * 100);
+                intervalMousePct += newPct;
+                totalMousePct += newPct;
+                totalMousePixels += pixels;
+
+                lastX = newX;
+                lastY = newY;
+
+                // Note: don't mark a mouse movement as an interaction (i.interact)
+
+                t.increment("mouse", pixels);
+            }
+
+            /**
+             * Reports on the mouse percentage change
+             */
+            function reportMousePct() {
+                var pct = Math.min(intervalMousePct, 100);
+
+                if (pct !== 0) {
+                    t.set("mousepct", pct);
+                }
+
+                // reset count
+                intervalMousePct = 0;
+            }
+
+            /**
+             * Updates the log if the mouse has moved enough
+             */
+            function reportMouseLog() {
+                // Only log if X,Y have changed and have changed over the specified
+                // minimum theshold.
+                if (lastLogX !== lastX ||
+                    lastLogY !== lastY) {
+                    var pixels = Math.round(Math.sqrt(Math.pow(lastLogY - lastY, 2) +
+                                            Math.pow(lastLogX - lastX, 2)));
+
+                    if (pixels >= MIN_LOG_PIXEL_CHANGE) {
+                        // add to the log
+                        t.log(LOG_TYPE_MOUSE, BOOMR.now(), {
+                            x: lastX,
+                            y: lastY
+                        });
+
+                        lastLogX = lastX;
+                        lastLogY = lastY;
+                    }
+                }
+            }
+
+            /**
+             * Analyzes Mouse events
+             */
+            function analyze(startTime) {
+                impl.addToBeacon("c.m.p", externalMetrics.mousePct());
+                impl.addToBeacon("c.m.n", externalMetrics.mousePixels());
+            }
+
+            /**
+             * Disables the monitor
+             */
+            function stop() {
+                if (reportMousePctInterval) {
+                    clearInterval(reportMousePctInterval);
+
+                    reportMousePctInterval = false;
+                }
+
+                if (reportMouseLogInterval) {
+                    clearInterval(reportMouseLogInterval);
+
+                    reportMouseLogInterval = false;
+                }
+
+                w.document.removeEventListener("mousemove", onMouseMove);
+            }
+
+            /**
+             * Resets on beacon
+             */
+            function onBeacon() {
+                totalMousePct = 0;
+                totalMousePixels = 0;
+            }
+
+            //
+            // External metrics
+            //
+
+            /**
+             * Percentage the mouse moved
+             */
+            externalMetrics.mousePct = function() {
+                return totalMousePct;
+            };
+
+            /**
+             * Pixels the mouse moved
+             */
+            externalMetrics.mousePixels = function() {
+                return totalMousePixels;
+            };
+
+            reportMousePctInterval = setInterval(reportMousePct, COLLECTION_INTERVAL);
+            reportMouseLogInterval = setInterval(reportMouseLog, REPORT_LOG_INTERVAL);
+
+            // start
+            w.document.addEventListener("mousemove", onMouseMove, false);
+
+            return {
+                analyze: analyze,
+                stop: stop,
+                onBeacon: onBeacon
+            };
+        };
+
+        /**
+         * Interaction monitor
+         *
+         * @class BOOMR.plugins.Continuity.InteractionMonitor
+         */
+        var InteractionMonitor = function(w, t, afterOnloadMinWait) {
+            // register this type
+            t.register("inter", COMPRESS_MODE_SMALL_NUMBERS);
+            t.register("interdly", COMPRESS_MODE_SMALL_NUMBERS);
+
+            //
+            // Constants
+            //
+
+            /**
+             * Interaction maximum delay (ms)
+             */
+            var INTERACTION_MAX_DELAY = 50;
+
+            /**
+             * How long after an interaction to wait before sending a beacon (ms).
+             */
+            var INTERACTION_MIN_WAIT_FOR_BEACON = afterOnloadMinWait;
+
+            /**
+             * Maximum amount of time after the first interaction before sending
+             * a beacon (ms).
+             */
+            var INTERACTION_MAX_WAIT_FOR_BEACON = 30000;
+
+            //
+            // Local Members
+            //
+
+            // Time of first interaction
+            var timeToFirstInteraction = 0;
+
+            // Interaction count
+            var interactions = 0;
+
+            // Interaction delay total
+            var interactionsDelay = 0;
+
+            // Delayed interactions
+            var delayedInteractions = 0;
+
+            // Delayed interaction time
+            var delayedInteractionTime = 0;
+
+            // whether or not we're enabled
+            var enabled = true;
+
+            // interaction beacon start time
+            var beaconStartTime = 0;
+
+            // interaction beacon end time
+            var beaconEndTime = 0;
+
+            // interaction beacon timers
+            var beaconMinTimeout = false;
+            var beaconMaxTimeout = false;
+
+            // whether or not a SPA nav is happening
+            var isSpaNav = false;
+
+            /**
+             * Logs an interaction
+             *
+             * @param {string} type Interaction type
+             * @param {number} now Time of callback
+             * @param {Event} e Event
+             */
+            function interact(type, now, e) {
+                now = now || BOOMR.now();
+
+                if (!enabled) {
+                    return;
+                }
+
+                interactions++;
+
+                if (!timeToFirstInteraction) {
+                    timeToFirstInteraction = now;
+                }
+
+                // check for interaction delay
+                var delay = 0;
+                if (e && e.timeStamp) {
+                    if (e.timeStamp > 1400000000000) {
+                        delay = now - e.timeStamp;
+                    }
+                    else {
+                        // if timeStamp is a DOMHighResTimeStamp, convert BOOMR.now() to same
+                        delay = (now - epoch) - e.timeStamp;
+                    }
+
+                    interactionsDelay += delay;
+
+                    // log as a delayed interaction
+                    if (delay > INTERACTION_MAX_DELAY) {
+                        t.increment("interdly");
+
+                        delayedInteractions++;
+                        delayedInteractionTime += delay;
+                    }
+                }
+
+                // increment the FPS
+                t.increment("inter");
+
+                //
+                // If we're doing after-page-load monitoring, start a timer to report
+                // on this interaction.  We will wait up to INTERACTION_MIN_WAIT_FOR_BEACON
+                // ms before sending the beacon, sliding the window if there are
+                // more interactions, up to a max of INTERACTION_MAX_WAIT_FOR_BEACON ms.
+                //
+                if (!isSpaNav && impl.afterOnloadMonitoring) {
+                    // mark now as the latest interaction
+                    beaconEndTime = BOOMR.now();
+
+                    if (!beaconStartTime) {
+                        debug("Interaction detected, sending a beacon after " +
+                            INTERACTION_MIN_WAIT_FOR_BEACON + " ms");
+
+                        // first interaction for this beacon
+                        beaconStartTime = beaconEndTime;
+
+                        // set a timer for the max timeout
+                        beaconMaxTimeout = setTimeout(sendInteractionBeacon,
+                            INTERACTION_MAX_WAIT_FOR_BEACON);
+                    }
+
+                    // if there was a timer for the min timeout, clear it first
+                    if (beaconMinTimeout) {
+                        debug("Clearing previous interaction timeout");
+
+                        clearTimeout(beaconMinTimeout);
+                        beaconMinTimeout = false;
+                    }
+
+                    // set a timer for the min timeout
+                    beaconMinTimeout = setTimeout(sendInteractionBeacon,
+                        INTERACTION_MIN_WAIT_FOR_BEACON);
+                }
+            }
+
+            /**
+             * Fired on spa_init
+             */
+            function onSpaInit() {
+                // note we're in a SPA nav right now
+                isSpaNav = true;
+
+                // clear any interaction beacon timers
+                clearBeaconTimers();
+            }
+
+            /**
+             * Clears interaction beacon timers.
+             */
+            function clearBeaconTimers() {
+                if (beaconMinTimeout) {
+                    clearTimeout(beaconMinTimeout);
+                    beaconMinTimeout = false;
+                }
+
+                if (beaconMaxTimeout) {
+                    clearTimeout(beaconMaxTimeout);
+                    beaconMaxTimeout = false;
+                }
+            }
+
+            /**
+             * Fired when an interaction beacon timed-out
+             */
+            function sendInteractionBeacon() {
+                debug("Sending interaction beacon");
+
+                clearBeaconTimers();
+
+                // notify anyone listening for an interaction event
+                BOOMR.fireEvent("interaction");
+
+                // add data to the beacon
+                impl.addToBeacon("rt.tstart", beaconStartTime);
+                impl.addToBeacon("rt.end", beaconEndTime);
+                impl.addToBeacon("rt.start", "manual");
+                impl.addToBeacon("http.initiator", "interaction");
+
+                BOOMR.sendBeacon();
+            }
+
+            /**
+             * Analyzes Interactions
+             */
+            function analyze(startTime) {
+                impl.addToBeacon("c.ttfi", externalMetrics.timeToFirstInteraction());
+                impl.addToBeacon("c.i.dc", externalMetrics.interactionDelayed());
+                impl.addToBeacon("c.i.dt", externalMetrics.interactionDelayedTime());
+                impl.addToBeacon("c.i.a", externalMetrics.interactionAvgDelay());
+            }
+
+            /**
+             * Disables the monitor
+             */
+            function stop() {
+                enabled = false;
+            }
+
+            /**
+             * Resets on beacon
+             */
+            function onBeacon() {
+                delayedInteractionTime = 0;
+                delayedInteractions = 0;
+                interactions = 0;
+                interactionsDelay = 0;
+
+                beaconStartTime = 0;
+                beaconEndTime = 0;
+
+                // no longer in a SPA nav
+                isSpaNav = false;
+
+                // if we had queued an interaction beacon, but something else is
+                // firing instead, use that data
+                clearBeaconTimers();
+            }
+
+            //
+            // External metrics
+            //
+            externalMetrics.interactionDelayed = function() {
+                return delayedInteractions;
+            };
+
+            externalMetrics.interactionDelayedTime = function() {
+                return Math.round(delayedInteractionTime);
+            };
+
+            externalMetrics.interactionAvgDelay = function() {
+                if (interactions > 0) {
+                    return Math.round(interactionsDelay / interactions);
+                }
+            };
+
+            externalMetrics.timeToFirstInteraction = function() {
+                if (timeToFirstInteraction) {
+                    // milliseconds since nav start
+                    return timeToFirstInteraction - epoch;
+                }
+
+                // no data
+                return;
+            };
+
+            //
+            // Setup
+            //
+
+            // clear interaction beacon timer if a SPA is starting
+            BOOMR.subscribe("spa_init", onSpaInit, null, impl);
+
+            return {
+                interact: interact,
+                analyze: analyze,
+                stop: stop,
+                onBeacon: onBeacon
+            };
+        };
+
+        /**
+         * Monitors for visibility state changes
+         *
+         * @class BOOMR.plugins.Continuity.VisibilityMonitor
+         */
+        var VisibilityMonitor = function(w, t, i) {
+            // register this type
+            t.register("vis", COMPRESS_MODE_SMALL_NUMBERS);
+
+            //
+            // Constants
+            //
+
+            /**
+             * Maps visibilityState from a string to a number
+             */
+            var VIS_MAP = {
+                "visible": 0,
+                "hidden": 1,
+                "prerender": 2,
+                "unloaded": 3
+            };
+
+            //
+            // Locals
+            //
+            var enabled = true;
+
+            BOOMR.subscribe("visibility_changed", function(e) {
+                var now = BOOMR.now();
+
+                if (!enabled) {
+                    return;
+                }
+
+                // update the timeline
+                t.increment("vis");
+
+                // add to the log (don't track the actual keys)
+                t.log(LOG_TYPE_VIS, now, {
+                    s: VIS_MAP[BOOMR.visibilityState()]
+                });
+
+                // update the interaction monitor
+                i.interact("vis", now, e);
+            });
+
+            /**
+             * Stops this monitor
+             */
+            function stop() {
+                enabled = false;
+            }
+
+            return {
+                stop: stop
+            };
+        };
+
+        /**
+         * Monitors for orientation changes
+         *
+         * @class BOOMR.plugins.Continuity.OrientationMonitor
+         */
+        var OrientationMonitor = function(w, t, i) {
+            // register this type
+            t.register("orn", COMPRESS_MODE_SMALL_NUMBERS);
+
+            //
+            // Locals
+            //
+            var enabled = true;
+
+            /**
+             * Fired when the orientation changes
+             *
+             * @param {Event} e Event
+             */
+            function onOrientationChange(e) {
+                var now = BOOMR.now();
+
+                if (!enabled) {
+                    return;
+                }
+
+                // update the timeline
+                t.increment("orn");
+
+                // add to the log (don't track the actual keys)
+                t.log(LOG_TYPE_ORIENTATION, now, {
+                    a: screen.orientation.angle
+                });
+
+                // update the interaction monitor
+                i.interact("orn", now, e);
+            }
+
+            /**
+             * Stops this monitor
+             */
+            function stop() {
+                enabled = false;
+
+                BOOMR.utils.removeListener(w, "orientationchange", onOrientationChange);
+            }
+
+            //
+            // Setup
+            //
+            BOOMR.utils.addListener(w, "orientationchange", onOrientationChange);
+
+            return {
+                stop: stop
+            };
+        };
+
+        /**
+         * Monitors for misc stats such as memory usage, battery levle, etc.
+         *
+         * Note: Not reporting on ResourceTiming entries or Errors since those
+         * will be captured by the respective plugins.
+         *
+         * @class BOOMR.plugins.Continuity.StatsMonitor
+         */
+        var StatsMonitor = function(w, t) {
+            // register types
+            t.register("mem", COMPRESS_MODE_LARGE_NUMBERS, true);
+            t.register("bat", COMPRESS_MODE_PERCENT, true);
+            t.register("domsz", COMPRESS_MODE_LARGE_NUMBERS, true);
+            t.register("domln", COMPRESS_MODE_LARGE_NUMBERS, true);
+            t.register("mut", COMPRESS_MODE_SMALL_NUMBERS);
+
+            //
+            // Constants
+            //
+
+            /**
+             * Report stats every second
+             */
+            var REPORT_INTERVAL = 1000;
+
+            //
+            // Locals
+            //
+            var d = w.document;
+
+            /**
+             * Whether or not we're enabled
+             */
+            var enabled = true;
+
+            /**
+             * Report interval ID
+             */
+            var reportInterval = false;
+
+            /**
+             * navigator.getBattery() object
+             */
+            var battery = null;
+
+            /**
+             * Number of mutations since last reset
+             */
+            var mutationCount = 0;
+
+            /**
+             * DOM length
+             */
+            var domLength = 0;
+
+            /**
+             * MutationObserver
+             */
+            var observer;
+
+            /**
+             * Fired on an interval to report stats such as memory usage
+             */
+            function reportStats() {
+                //
+                // Memory
+                //
+                var mem = p &&
+                    p.memory &&
+                    p.memory.usedJSHeapSize;
+
+                if (mem) {
+                    t.set("mem", mem);
+                }
+
+                //
+                // DOM sizes (bytes) and length (node count)
+                //
+                domLength = d.getElementsByTagName("*").length;
+
+                t.set("domsz", d.documentElement.innerHTML.length);
+                t.set("domln", domLength);
+
+                //
+                // DOM mutations
+                //
+                if (mutationCount > 0) {
+                    // report as % of DOM size
+                    var deltaPct = Math.min(Math.round(mutationCount / domLength * 100), 100);
+
+                    t.set("mut", deltaPct);
+
+                    mutationCount = 0;
+                }
+            }
+
+            /**
+             * Fired when the battery level changes
+             */
+            function onBatteryLevelChange() {
+                if (!enabled || !battery) {
+                    return;
+                }
+
+                t.set("bat", battery.level);
+            }
+
+            /**
+             * Fired on MutationObserver callback
+             */
+            function onMutationObserver(mutations) {
+                mutations.forEach(function(mutation) {
+                    // only listen for childList changes
+                    if (mutation.type !== "childList") {
+                        return;
+                    }
+
+                    for (var i = 0; i < mutation.addedNodes.length; i++) {
+                        var node = mutation.addedNodes[i];
+
+                        // add mutations for this node and all sub-nodes
+                        mutationCount++;
+                        mutationCount += node.getElementsByTagName ?
+                            node.getElementsByTagName("*").length : 0;
+                    }
+                });
+            }
+
+            /**
+             * Stops this monitor
+             */
+            function stop() {
+                enabled = false;
+
+                // stop reporting on metrics
+                if (reportInterval) {
+                    clearInterval(reportInterval);
+                    reportInterval = false;
+                }
+
+                // disconnect MO
+                if (observer) {
+                    observer.disconnect();
+                }
+
+                // stop listening for battery info
+                if (battery) {
+                    battery.onlevelchange = null;
+                }
+            }
+
+            //
+            // Setup
+            //
+
+            // misc stats
+            reportInterval = setInterval(reportStats, REPORT_INTERVAL);
+
+            // Battery
+            if (w.navigator && typeof w.navigator.getBattery === "function") {
+                w.navigator.getBattery().then(function(b) {
+                    battery = b;
+
+                    battery.onlevelchange = onBatteryLevelChange;
+                });
+            }
+
+            // MutationObserver
+            if (typeof w.MutationObserver === "function") {
+                observer = new w.MutationObserver(onMutationObserver);
+
+                // configure the observer
+                observer.observe(d, { childList: true, subtree: true });
+            }
+
+            return {
+                stop: stop
+            };
+        };
+
+        //
+        // Continuity implementation
+        //
+        impl = {
+            //
+            // Config
+            //
+            /**
+             * Whether or not to monitor longTasks
+             */
+            monitorLongTasks: true,
+
+            /**
+             * Whether or not to monitor Page Busy
+             */
+            monitorPageBusy: true,
+
+            /**
+             * Whether or not to monitor FPS
+             */
+            monitorFrameRate: true,
+
+            /**
+             * Whether or not to monitor interactions
+             */
+            monitorInteractions: true,
+
+            /**
+             * Whether or not to monitor page stats
+             */
+            monitorStats: true,
+
+            /**
+             * Whether to monitor for interactions after onload
+             */
+            afterOnload: true,
+
+            /**
+             * Max recording length after onload (if not a SPA) (ms)
+             */
+            afterOnloadMaxLength: DEFAULT_AFTER_ONLOAD_MAX_LENGTH,
+
+            /**
+             * Minium number of ms after an interaction to wait before sending
+             * an interaction beacon
+             */
+            afterOnloadMinWait: 5000,
+
+            /**
+             * Number of milliseconds after onload to wait for TTI, or,
+             * false if not configured.
+             */
+            waitAfterOnload: false,
+
+            /**
+             * Whether or not to wait for a call to
+             * frameworkReady() before starting TTI calculations
+             */
+            ttiWaitForFrameworkReady: false,
+
+            /**
+             * If set, wait for the specified CSS selector of hero images to have
+             * loaded before starting TTI calculations
+             */
+            ttiWaitForHeroImages: false,
+
+            /**
+             * Whether or not to send a detailed log of all events.
+             */
+            sendLog: true,
+
+            /**
+             * Whether or not to send a compressed timeline of events
+             */
+            sendTimeline: true,
+
+            //
+            // State
+            //
+            /**
+             * Whether or not we're initialized
+             */
+            initialized: false,
+
+            /**
+             * Whether we're ready to send a beacon
+             */
+            complete: false,
+
+            /**
+             * Whether or not this is an SPA app
+             */
+            isSpa: false,
+
+            /**
+             * Whether Page Ready has fired or not
+             */
+            firedPageReady: false,
+
+            /**
+             * Whether or not we're currently monitoring for interactions
+             * after the Page Load beacon
+             */
+            afterOnloadMonitoring: false,
+
+            /**
+             * Framework Ready time, if configured
+             */
+            frameworkReady: null,
+
+            /**
+             * Timeline
+             */
+            timeline: null,
+
+            /**
+             * LongTaskMonitor
+             */
+            longTaskMonitor: null,
+
+            /**
+             * PageBusyMonitor
+             */
+            pageBusyMonitor: null,
+
+            /**
+             * FrameRateMonitor
+             */
+            frameRateMonitor: null,
+
+            /**
+             * InteractionMonitor
+             */
+            interactionMonitor: null,
+
+            /**
+             * ScrollMontior
+             */
+            scrollMonitor: null,
+
+            /**
+             * ClickMonitor
+             */
+            clickMonitor: null,
+
+            /**
+             * KeyMonitor
+             */
+            keyMonitor: null,
+
+            /**
+             * MouseMonitor
+             */
+            mouseMonitor: null,
+
+            /**
+             * VisibilityMonitor
+             */
+            visibilityMonitor: null,
+
+            /**
+             * OrientationMonitor
+             */
+            orientationMonitor: null,
+
+            /**
+             * StatsMonitor
+             */
+            statsMonitor: null,
+
+            /**
+             * Vars we added to the beacon
+             */
+            addedVars: [],
+
+            /**
+             * All possible monitors
+             */
+            monitors: [
+                "timeline",
+                "longTaskMonitor",
+                "pageBusyMonitor",
+                "frameRateMonitor",
+                "scrollMonitor",
+                "keyMonitor",
+                "clickMonitor",
+                "mouseMonitor",
+                "interactionMonitor",
+                "visibilityMonitor",
+                "orientationMonitor",
+                "statsMonitor"
+            ],
+
+            /**
+             * When we last sent a beacon
+             */
+            timeOfLastBeacon: 0,
+
+            /**
+             * Whether or not we've added data to this beacon
+             */
+            hasAddedDataToBeacon: false,
+
+            //
+            // Callbacks
+            //
+            /**
+             * Callback before the beacon is going to be sent
+             */
+            onBeforeBeacon: function() {
+                impl.runAllAnalyzers();
+            },
+
+            /**
+             * Runs all analyzers
+             */
+            runAllAnalyzers: function() {
+                var i, mon;
+
+                if (impl.hasAddedDataToBeacon) {
+                    // don't add data twice
+                    return;
+                }
+
+                for (i = 0; i < impl.monitors.length; i++) {
+                    mon = impl[impl.monitors[i]];
+
+                    if (mon && typeof mon.analyze === "function") {
+                        mon.analyze(impl.timeOfLastBeacon);
+                    }
+                }
+
+                // add last time the data was reset, if ever
+                impl.addToBeacon("c.lb", impl.timeOfLastBeacon ? impl.timeOfLastBeacon.toString(36) : 0);
+
+                // keep track of when we last added data
+                impl.timeOfLastBeacon = BOOMR.now();
+
+                // note we've added data
+                impl.hasAddedDataToBeacon = true;
+            },
+
+            /**
+             * Callback after the beacon is ready to send, so we can clear
+             * our added vars and do other cleanup.
+             */
+            onBeacon: function() {
+                var i;
+
+                // remove added vars
+                if (impl.addedVars && impl.addedVars.length > 0) {
+                    BOOMR.removeVar(impl.addedVars);
+
+                    impl.addedVars = [];
+                }
+
+                // let any other monitors know that a beacon was sent
+                for (i = 0; i < impl.monitors.length; i++) {
+                    var monitor = impl[impl.monitors[i]];
+
+                    if (monitor) {
+                        // disable ourselves if we're not doing anything after the first beacon
+                        if (!impl.afterOnload) {
+                            if (typeof monitor.stop === "function") {
+                                monitor.stop();
+                            }
+                        }
+
+                        // notify all plugins that there's been a beacon
+                        if (typeof monitor.onBeacon === "function") {
+                            monitor.onBeacon();
+                        }
+                    }
+                }
+
+                // we haven't added data any more
+                impl.hasAddedDataToBeacon = false;
+            },
+
+            /**
+             * Callback when an XHR load happens
+             */
+            onXhrLoad: function(data) {
+                // note this is an SPA for later
+                if (data && BOOMR.utils.inArray(data.initiator, BOOMR.constants.BEACON_TYPE_SPAS)) {
+                    impl.isSpa = true;
+                }
+
+                if (data && data.initiator === "spa_hard") {
+                    impl.onPageReady();
+                }
+            },
+
+            /**
+             * Callback when the page is ready
+             */
+            onPageReady: function() {
+                impl.firedPageReady = true;
+
+                //
+                // If we're monitoring interactions after onload, set a timer to
+                // disable them if configured
+                //
+                if (impl.afterOnload &&
+                    impl.monitorInteractions) {
+                    impl.afterOnloadMonitoring = true;
+
+                    // disable after the specified amount if not a SPA
+                    if (!impl.isSpa && typeof impl.afterOnloadMaxLength === "number") {
+                        setTimeout(function() {
+                            impl.afterOnloadMonitoring = false;
+                        }, impl.afterOnloadMaxLength);
+                    }
+                }
+
+                if (impl.waitAfterOnload) {
+                    var start = BOOMR.now();
+
+                    setTimeout(function checkTti() {
+                        // wait for up to the defined time after onload
+                        if (BOOMR.now() - start > impl.waitAfterOnload) {
+                            // couldn't calculate TTI, send the beacon anyways
+                            impl.complete = true;
+                            BOOMR.sendBeacon();
+                        }
+                        else {
+                            // run the TTI calculation
+                            impl.timeline.analyze();
+
+                            // if we got something, mark as complete and send
+                            if (externalMetrics.timeToInteractive()) {
+                                impl.complete = true;
+                                BOOMR.sendBeacon();
+                            }
+                            else {
+                                // poll again
+                                setTimeout(checkTti, TIME_TO_INTERACTIVE_WAIT_POLL_PERIOD);
+                            }
+                        }
+                    }, TIME_TO_INTERACTIVE_WAIT_POLL_PERIOD);
+                }
+                else {
+                    impl.complete = true;
+                }
+            },
+
+            //
+            // Misc
+            //
+            /**
+             * Adds a variable to the beacon, tracking the names so we can
+             * remove them later.
+             *
+             * @param {string} name Name
+             * @param {string} val Value.  If 0 or undefined, the value is removed from the beacon.
+             * @param {number} force Force adding the variable, even if 0
+             */
+            addToBeacon: function(name, val, force) {
+                if ((val === 0 || typeof val === "undefined") && !force) {
+                    BOOMR.removeVar(name);
+                    return;
+                }
+
+                BOOMR.addVar(name, val);
+
+                impl.addedVars.push(name);
+            }
+        };
+
+        //
+        // External Plugin
+        //
+        BOOMR.plugins.Continuity = {
+            init: function(config) {
+                BOOMR.utils.pluginConfig(impl, config, "Continuity",
+                    ["monitorLongTasks", "monitorPageBusy", "monitorFrameRate", "monitorInteractions",
+                        "afterOnload", "afterOnloadMaxLength", "afterOnloadMinWait",
+                        "waitAfterOnload", "ttiWaitForFrameworkReady", "ttiWaitForHeroImages",
+                        "sendLog", "sendTimeline"]);
+
+                if (impl.initialized) {
+                    return this;
+                }
+
+                impl.initialized = true;
+
+                // create the timeline
+                impl.timeline = new Timeline(BOOMR.now());
+
+                //
+                // Setup
+                //
+                if (BOOMR.window) {
+                    //
+                    // LongTasks
+                    //
+                    if (impl.monitorLongTasks &&
+                        typeof BOOMR.window.PerformanceObserver === "function" &&
+                        BOOMR.window.PerformanceLongTaskTiming) {
+                        impl.longTaskMonitor = new LongTaskMonitor(BOOMR.window, impl.timeline);
+                    }
+
+                    //
+                    // Page Busy (if LongTasks aren't supported or aren't enabled)
+                    //
+                    if (impl.monitorPageBusy &&
+                        (!BOOMR.window.PerformanceObserver || !BOOMR.window.PerformanceLongTaskTiming || !impl.monitorLongTasks)) {
+                        impl.pageBusyMonitor = new PageBusyMonitor(BOOMR.window, impl.timeline);
+                    }
+
+                    //
+                    // FPS
+                    //
+                    if (impl.monitorFrameRate && typeof BOOMR.window.requestAnimationFrame === "function") {
+                        impl.frameRateMonitor = new FrameRateMonitor(BOOMR.window, impl.timeline);
+                    }
+
+                    //
+                    // Interactions
+                    //
+                    if (impl.monitorInteractions) {
+                        impl.interactionMonitor = new InteractionMonitor(BOOMR.window, impl.timeline, impl.afterOnloadMinWait);
+                        impl.scrollMonitor = new ScrollMonitor(BOOMR.window, impl.timeline, impl.interactionMonitor);
+                        impl.keyMonitor = new KeyMonitor(BOOMR.window, impl.timeline, impl.interactionMonitor);
+                        impl.clickMonitor = new ClickMonitor(BOOMR.window, impl.timeline, impl.interactionMonitor);
+                        impl.mouseMonitor = new MouseMonitor(BOOMR.window, impl.timeline, impl.interactionMonitor);
+                        impl.visibilityMonitor = new VisibilityMonitor(BOOMR.window, impl.timeline, impl.interactionMonitor);
+                        impl.orientationMonitor = new OrientationMonitor(BOOMR.window, impl.timeline, impl.interactionMonitor);
+                    }
+
+                    //
+                    // Stats
+                    //
+                    if (impl.monitorStats) {
+                        impl.statsMonitor = new StatsMonitor(BOOMR.window, impl.timeline, impl.interactionMonitor);
+                    }
+                }
+
+                // add epoch to every beacon
+                BOOMR.addVar("c.e", epoch.toString(36));
+
+                // event handlers
+                BOOMR.subscribe("before_beacon", impl.onBeforeBeacon, null, impl);
+                BOOMR.subscribe("onbeacon", impl.onBeacon, null, impl);
+                BOOMR.subscribe("page_ready", impl.onPageReady, null, impl);
+                BOOMR.subscribe("xhr_load", impl.onXhrLoad, null, impl);
+
+                return this;
+            },
+
+            is_complete: function() {
+                return impl.complete;
+            },
+
+            /**
+             * Signal that the framework is ready
+             */
+            frameworkReady: function() {
+                impl.frameworkReady = BOOMR.now();
+            },
+
+            // external metrics
+            metrics: externalMetrics
+
+            /* BEGIN_DEBUG */,
+            compressBucketLog: compressBucketLog,
+            decompressBucketLog: decompressBucketLog,
+            decompressBucketLogNumber: decompressBucketLogNumber,
+            decompressLog: decompressLog
+            /* END_DEBUG */
+        };
+    }());
 }
