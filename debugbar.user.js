@@ -489,6 +489,37 @@
     document.addEventListener('readystatechange', init, false);
 })();
 
+(function() {
+	window.addEventListener("load", function() {
+        Array.prototype.forEach.call(document.getElementsByTagName('img'), function(img){
+            var entry = performance.getEntriesByName(img.src)[0]
+            if (!entry) return
+
+            if (cachedInBrowser(entry)) {
+                img.style.border = 'solid 3px green'
+                img.style.opacity = '0.5'
+            } else if (cachedAtEdge(entry)) {
+                img.style.border = 'solid 3px blue'
+                img.style.opacity = '0.5'
+            } else console.info(entry)
+        })
+
+        function cachedInBrowser({requestStart, responseStart, transferSize}) {
+            return transferSize === 0 || (responseStart - requestStart < 20)
+        }
+        function cachedAtEdge({name, serverTiming}) {
+            var origin
+            serverTiming.forEach(function(st) {
+                if (st.name === 'origin' || st.metric === 'origin') {
+                    console.info(name, st.description)
+                    origin = st.description === false
+                }
+            })
+            return origin === false
+        }
+	})
+})();
+
 //
 // ==================================================================
 // External Dependencies:
