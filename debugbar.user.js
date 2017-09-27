@@ -91,6 +91,8 @@
                 return;
             }
 
+	        $ = window.jQuery;
+
             cssobj({
                 "#debugbar": {
                     color: "white"
@@ -153,7 +155,7 @@
                 .css({
                     height: TOOLBAR_HEIGHT,
                     position: 'fixed',
-                    "z-index": 100,
+                    "z-index": Number.MAX_SAFE_INTEGER,
                     top: $(window).height() - TOOLBAR_HEIGHT,
                     background: "#404040",
                     opacity: 0.9,
