@@ -2601,7 +2601,7 @@ function initEmbeddedBoomerang() {
      * If you want to wait for your framework to be ready (e.g. your SPA has loaded or
      * a button has a click handler registered), you can add an option `ttiWaitForFrameworkReady`.
      *
-     * Once enabled, TTI won’t be calculated until the following is called:
+     * Once enabled, TTI won't be calculated until the following is called:
      *
      * ```
      * // my framework is ready
@@ -2626,7 +2626,7 @@ function initEmbeddedBoomerang() {
      * };
      * ```
      *
-     * Note this only works in ResourceTiming-supported browsers (and won’t be used in
+     * Note this only works in ResourceTiming-supported browsers (and won't be used in
      * older browsers).
      *
      * ### Time to Interactive
@@ -2661,7 +2661,7 @@ function initEmbeddedBoomerang() {
      * sent immediately (missing the TTI timer).
      *
      * If you set `waitAfterOnload` to `0` (or it's not set), Boomerang will send the
-     * beacon at the regular page load event.  If TTI didn’t yet happen, it won’t be reported.
+     * beacon at the regular page load event.  If TTI didn't yet happen, it won't be reported.
      *
      * If you want to set `waitAfterOnload`, we'd recommend between `1000` and `5000`
      * (1 and 5 seconds).
