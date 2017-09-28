@@ -62,7 +62,7 @@ if (window && window.requestAnimationFrame && "performance" in window && window.
     var TOOLBAR_HEIGHT_LOADING = 50;
 
     // how long event handlers will wait before being registered
-    var DELAY_FRAMEWORK_HANDLER_MS = 30000;
+    var DELAY_FRAMEWORK_HANDLER_MS = 10000;
 
     // Continuity: How long to wait after Onload to calculate TTI
     window.CONTINUITY_WAIT_AFTER_ONLOAD = 30000;
