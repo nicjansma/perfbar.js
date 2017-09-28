@@ -4,6 +4,8 @@
 // @version      0.1
 // @author       Nic Jansma
 // @grant        GM_addStyle
+// @grant        GM_setValue
+// @grant        GM_getValue
 // @run-at       document-start
 // @include      *
 // @noframes
@@ -13,43 +15,12 @@
     //
     // Utility functions
     //
-    /**
-     * Adds a SCRIPT to the current page
-     *
-     * @param {string} src Script source
-     * @param {function} callback Callback function
-     */
-    function addScript(src, callback) {
-        var s = document.createElement('script');
-        s.setAttribute('src', src);
-
-        if (callback) {
-            s.onload = callback;
-        }
-
-        document.head.appendChild(s);
+    function setState(name, value) {
+        GM_setValue("debugbar-" + name, value);
     }
 
-    function addScriptUnless(src, unless, callback) {
-        if (unless) {
-            if (callback) {
-                returncallback();
-            }
-        } else {
-            addScript(src, callback);
-        }
-    }
-
-    /**
-     * Adds a CSS to the current page
-     *
-     * @param {string} src CSS source
-     */
-    function addCss(src) {
-        var s = document.createElement('link');
-        s.setAttribute('href', src);
-        s.setAttribute('rel', 'stylesheet');
-        document.head.appendChild(s);
+    function getState(name) {
+        return GM_getValue("debugbar-" + name);
     }
 
     //
@@ -426,22 +397,30 @@
             busy(300);
         }
 
-        function toggleJank(e) {
-            var el$ = $(e.target);
-
+        function toggleJank() {
             if (jankInterval) {
                 clearInterval(jankInterval);
                 jankInterval = false;
+
+                // save state
+                setState("jank", false);
             } else {
                 // TODO turn on scroll jank too
                 jankInterval = setInterval(jank, 500);
+
+                // save state
+                setState("jank", true);
             }
         }
 
-        function delayFrameworks(e) {
+        function toggleDelayFrameworks() {
         }
 
-        function disableEdgeCache(e) {
+        function toggleDisableEdgeCache() {
+        }
+
+        function toggleShowCacheStatus() {
+            setState("cacheStatus", getState("cacheStatus") ? false : true);
         }
 
         function init() {
@@ -466,12 +445,18 @@
                                 "delayFrameworks": {
                                     name: "Delay Frameworks During Load",
                                     type: "checkbox",
-                                    callback: delayFrameworks
+                                    events: { click: toggleDelayFrameworks }
                                 },
                                 "disableEdgeCache": {
                                     name: "Disable Edge Cache",
                                     type: "checkbox",
-                                    callback: disableEdgeCache
+                                    events: { click: toggleDisableEdgeCache }
+                                },
+                                "showCacheStatus": {
+                                    name: "Show Cache Status",
+                                    type: "checkbox",
+                                    events: { click: toggleShowCacheStatus },
+                                    selected: getState("cacheStatus"),
                                 }
                             },
                             position: function(opt){
@@ -484,6 +469,13 @@
                         };
                     }
                 });
+        }
+
+        //
+        // Initialize
+        //
+        if (getState("jank")) {
+            toggleJank();
         }
 
         return {
@@ -520,37 +512,37 @@
 
     // check to see if we can initialize as soon as the readystate changes
     document.addEventListener('readystatechange', init, false);
-})();
 
-(function() {
-	window.addEventListener("load", function() {
-        Array.prototype.forEach.call(document.getElementsByTagName('img'), function(img){
-            var entry = performance.getEntriesByName(img.src)[0]
-            if (!entry) return
+    if (getState("cacheStatus")) {
+        window.addEventListener("load", function() {
+            Array.prototype.forEach.call(document.getElementsByTagName('img'), function(img){
+                var entry = performance.getEntriesByName(img.src)[0]
+                if (!entry) return
 
-            if (cachedInBrowser(entry)) {
-                img.style.border = 'solid 3px green'
-                img.style.opacity = '0.5'
-            } else if (cachedAtEdge(entry)) {
-                img.style.border = 'solid 3px blue'
-                img.style.opacity = '0.5'
-            } else console.info(entry)
-        })
-
-        function cachedInBrowser({requestStart, responseStart, transferSize}) {
-            return transferSize === 0 || (responseStart - requestStart < 20)
-        }
-        function cachedAtEdge({name, serverTiming}) {
-            var origin
-            serverTiming.forEach(function(st) {
-                if (st.name === 'origin' || st.metric === 'origin') {
-                    console.info(name, st.description)
-                    origin = st.description === false
-                }
+                if (cachedInBrowser(entry)) {
+                    img.style.border = 'solid 3px green'
+                    img.style.opacity = '0.5'
+                } else if (cachedAtEdge(entry)) {
+                    img.style.border = 'solid 3px blue'
+                    img.style.opacity = '0.5'
+                } else console.info(entry)
             })
-            return origin === false
-        }
-	})
+
+            function cachedInBrowser({requestStart, responseStart, transferSize}) {
+                return transferSize === 0 || (responseStart - requestStart < 20)
+            }
+            function cachedAtEdge({name, serverTiming}) {
+                var origin
+                serverTiming.forEach(function(st) {
+                    if (st.name === 'origin' || st.metric === 'origin') {
+                        console.info(name, st.description)
+                        origin = st.description === false
+                    }
+                })
+                return origin === false
+            }
+        })
+    }
 })();
 
 //
