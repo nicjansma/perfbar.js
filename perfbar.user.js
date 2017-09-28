@@ -490,7 +490,10 @@ var UW = unsafeWindow;
             tb.register("Resources", ["#", "KB", "TAO", "Cached", "Offload %", "Offload KB", "Edge"]);
 
             document.addEventListener("onBoomerangLoaded", function({detail: {BOOMR}}) {
-                BOOMR.subscribe("onbeacon", function({t_other}) {
+                BOOMR.subscribe("onbeacon", function({t_other, ...beacon}) {
+                    if (beacon.hasOwnProperty('cmet.offload')) {
+                      tb.update("Resources", "Offload KB", Math.round(beacon['cmet.offload'] / 1000))
+                    }
                     t_other.split(',').find(function(section) {
                       var data = section.split('|')
                       if (data[0] === 'custom0') {
