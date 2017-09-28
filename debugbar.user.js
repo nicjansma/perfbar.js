@@ -328,6 +328,9 @@ if (window && window.requestAnimationFrame && "performance" in window && window.
         function updateTimings() {
             var tti = window.BOOMR && BOOMR.plugins && BOOMR.plugins.Continuity && BOOMR.plugins.Continuity.metrics.timeToInteractive();
 
+            var paint = performance.getEntriesByType('paint').find(function({name}) { return name === 'first-paint' })
+            var truthy = 1
+            paint && updateTiming("Paint", truthy, truthy + Math.round(paint.startTime))
             updateTiming("DCL", performance.timing.navigationStart, performance.timing.domContentLoadedEventStart);
             updateTiming("Load", performance.timing.navigationStart, performance.timing.loadEventStart);
             updateTiming("TTI", performance.timing.navigationStart, performance.timing.navigationStart + tti);
@@ -338,7 +341,7 @@ if (window && window.requestAnimationFrame && "performance" in window && window.
         }
 
         function init() {
-            tb.register("Events", ["DCL", "Load", "TTI"]);
+            tb.register("Events", ["Paint", "DCL", "Load", "TTI"]);
 
             setTimeout(updateTimings, 100);
         }
