@@ -107,7 +107,7 @@ if (window && window.requestAnimationFrame && "performance" in window && window.
                 },
                 ".debugbar-section": {
                     display: "inline-block",
-                    height: "25px",
+                    height: "100%",
                     padding: "5px 0 0 5px",
                     "margin-left": "20px",
                     "border-left": "solid 2px #ccc",
@@ -205,7 +205,7 @@ if (window && window.requestAnimationFrame && "performance" in window && window.
             if (!sections[section]) {
                 // create the dom
                 var section$ = $("<div>").addClass("debugbar-section").css(css || {});
-                section$.append($("<div>").addClass("debugbar-section-title").text(section + ":"));
+//                section$.append($("<div>").addClass("debugbar-section-title").text(section + ":"));
 
                 sections[section] = {
                     components: {},
@@ -298,9 +298,45 @@ if (window && window.requestAnimationFrame && "performance" in window && window.
             }
         }
 
+        function init() {
+            tb.register("Timings", ["DNS", "TCP", "Req", "Res"]);
+
+            // these should all be ready on startup
+            updateTiming("DNS", performance.timing.domainLookupStart, performance.timing.domainLookupEnd);
+            updateTiming("TCP", performance.timing.connectStart, performance.timing.connectEnd);
+            updateTiming("Req", performance.timing.requestStart, performance.timing.responseStart);
+            updateTiming("Res", performance.timing.responseStart, performance.timing.responseEnd);
+        }
+
+        return {
+            init: init
+        };
+    })(toolBar));
+
+    //
+    // Events
+    //
+    components.push((function(tb) {
+        var metricUpdated = {};
+
+        function updateTiming(name, start, end) {
+            if (metricUpdated[name]) {
+                return;
+            }
+
+            if (start && end) {
+                tb.update("Events", name, end - start);
+
+                metricUpdated[name] = true;
+            }
+        }
+
         function updateTimings() {
             var tti = window.BOOMR && BOOMR.plugins && BOOMR.plugins.Continuity && BOOMR.plugins.Continuity.metrics.timeToInteractive();
 
+            var paint = performance.getEntriesByType('paint').find(function({name}) { return name === 'first-paint' })
+            var truthy = 1
+            paint && updateTiming("Paint", truthy, truthy + Math.round(paint.startTime))
             updateTiming("DCL", performance.timing.navigationStart, performance.timing.domContentLoadedEventStart);
             updateTiming("Load", performance.timing.navigationStart, performance.timing.loadEventStart);
             updateTiming("TTI", performance.timing.navigationStart, performance.timing.navigationStart + tti);
@@ -311,13 +347,7 @@ if (window && window.requestAnimationFrame && "performance" in window && window.
         }
 
         function init() {
-            tb.register("Timings", ["DNS", "TCP", "Req", "Res", "DCL", "Load", "TTI"]);
-
-            // these should all be ready on startup
-            updateTiming("DNS", performance.timing.domainLookupStart, performance.timing.domainLookupEnd);
-            updateTiming("TCP", performance.timing.connectStart, performance.timing.connectEnd);
-            updateTiming("Req", performance.timing.requestStart, performance.timing.responseStart);
-            updateTiming("Res", performance.timing.responseStart, performance.timing.responseEnd);
+            tb.register("Events", ["Paint", "DCL", "Load", "TTI"]);
 
             setTimeout(updateTimings, 100);
         }
@@ -510,7 +540,8 @@ if (window && window.requestAnimationFrame && "performance" in window && window.
                                 "delayFrameworks": {
                                     name: "Delay Framework Handlers During Load",
                                     type: "checkbox",
-                                    events: { click: toggleDelayFrameworkHandlers }
+                                    events: { click: toggleDelayFrameworkHandlers },
+                                    selected: getState("delayFrameworkHandlers"),
                                 },
                                 "disableEdgeCache": {
                                     name: "Disable Edge Cache",
@@ -631,7 +662,17 @@ if (window && window.requestAnimationFrame && "performance" in window && window.
             var _this = this, args = arguments;
             var eventName = arguments[0];
 
-            if (delayedEvents.indexOf(arguments[0]) === -1) {
+            function isAttached(elem) {
+                if (!elem) return false
+                if (typeof elem.nodeType === 'undefined') return true
+                if (elem.nodeType === 9) return true
+                return isAttached(elem.parentNode)
+            }
+
+            var debugbar = document.getElementById('debugbar')
+            if (delayedEvents.indexOf(arguments[0]) === -1 ||
+                (debugbar && debugbar.contains(this)) ||
+                !isAttached(this)) {
                 ael.apply(_this, args);
                 return;
             }
