@@ -423,15 +423,17 @@ if (window && window.requestAnimationFrame && "performance" in window && window.
         }
 
         function toggleJank() {
+            var scrollJank = busy.bind(undefined, 25);
             if (jankInterval) {
                 clearInterval(jankInterval);
                 jankInterval = false;
+                window.removeEventListener('scroll', scrollJank);
 
                 // save state
                 setState("jank", false);
             } else {
-                // TODO turn on scroll jank too
                 jankInterval = setInterval(jank, 500);
+                window.addEventListener('scroll', scrollJank);
 
                 // save state
                 setState("jank", true);
