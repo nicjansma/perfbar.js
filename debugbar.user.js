@@ -341,6 +341,9 @@ if (window && window.requestAnimationFrame && "performance" in window && window.
         // time we started monitoring
         var frameStartTime = performance.now();
 
+        // rage clicks
+        var rageClicks = 0;
+
         /**
          * requestAnimationFrame callback
          */
@@ -363,11 +366,19 @@ if (window && window.requestAnimationFrame && "performance" in window && window.
             frameStartTime = performance.now();
         }
 
+        function onRageClick() {
+            tb.update("Realtime", "Rage Clicks", ++rageClicks, {
+                color: "red"
+            });
+        }
+
         // start out the first frame
         window.requestAnimationFrame(frame);
 
         function init() {
-            tb.register("Realtime", ["FPS", "LongTasks"]);
+            tb.register("Realtime", ["FPS", "LongTasks", "Rage Clicks"]);
+
+            BOOMR.subscribe("rage_click", onRageClick);
 
             setInterval(reportFps, 1000);
         }
@@ -384,10 +395,6 @@ if (window && window.requestAnimationFrame && "performance" in window && window.
         var resLength = 0;
 
         function updateResources() {
-            if (!window.BOOMR || !BOOMR.plugins) {
-                initEmbeddedBoomerang();
-            }
-
             var resources = BOOMR.plugins.ResourceTiming.getFilteredResourceTiming();
 
             if (resources.entries.length != resLength) {
@@ -553,6 +560,10 @@ if (window && window.requestAnimationFrame && "performance" in window && window.
             // try again soon
             setTimeout(init, 50);
             return;
+        }
+
+        if (!window.BOOMR || !BOOMR.plugins) {
+            initEmbeddedBoomerang();
         }
 
         toolBar.init();
@@ -4701,6 +4712,7 @@ function initEmbeddedBoomerang() {
 
                     if ((sameClicks + 1) >= RAGE_CLICK_THRESHOLD) {
                         rageClicks++;
+                        BOOMR.fireEvent("rage_click");
                     }
                 }
                 else {
