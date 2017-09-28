@@ -524,7 +524,8 @@ if (window && window.requestAnimationFrame && "performance" in window && window.
                                 "delayFrameworks": {
                                     name: "Delay Framework Handlers During Load",
                                     type: "checkbox",
-                                    events: { click: toggleDelayFrameworkHandlers }
+                                    events: { click: toggleDelayFrameworkHandlers },
+                                    selected: getState("delayFrameworkHandlers"),
                                 },
                                 "disableEdgeCache": {
                                     name: "Disable Edge Cache",
@@ -641,7 +642,17 @@ if (window && window.requestAnimationFrame && "performance" in window && window.
             var _this = this, args = arguments;
             var eventName = arguments[0];
 
-            if (delayedEvents.indexOf(arguments[0]) === -1) {
+            function isAttached(elem) {
+                if (!elem) return false
+                if (typeof elem.nodeType === 'undefined') return true
+                if (elem.nodeType === 9) return true
+                return isAttached(elem.parentNode)
+            }
+
+            var debugbar = document.getElementById('debugbar')
+            if (delayedEvents.indexOf(arguments[0]) === -1 ||
+                (debugbar && debugbar.contains(this)) ||
+                !isAttached(this)) {
                 ael.apply(_this, args);
                 return;
             }
