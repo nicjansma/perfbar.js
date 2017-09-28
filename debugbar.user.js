@@ -241,6 +241,12 @@ if (window && window.requestAnimationFrame && "performance" in window && window.
                 }, 1000);
             }
 
+            el$.css("text-decoration", "underline");
+
+            setTimeout(function() {
+                el$.css("text-decoration", "none");
+            }, 1000);
+
             if (css) {
                 el$.css(css);
             }
