@@ -95,7 +95,7 @@ if (window && window.requestAnimationFrame && "performance" in window && window.
                 },
                 ".debugbar-section": {
                     display: "inline-block",
-                    height: "25px",
+                    height: "100%",
                     padding: "5px 0 0 5px",
                     "margin-left": "20px",
                     "border-left": "solid 2px #ccc",
@@ -181,7 +181,7 @@ if (window && window.requestAnimationFrame && "performance" in window && window.
             if (!sections[section]) {
                 // create the dom
                 var section$ = $("<div>").addClass("debugbar-section").css(css || {});
-                section$.append($("<div>").addClass("debugbar-section-title").text(section + ":"));
+//                section$.append($("<div>").addClass("debugbar-section-title").text(section + ":"));
 
                 sections[section] = {
                     components: {},
@@ -268,6 +268,39 @@ if (window && window.requestAnimationFrame && "performance" in window && window.
             }
         }
 
+        function init() {
+            tb.register("Timings", ["DNS", "TCP", "Req", "Res"]);
+
+            // these should all be ready on startup
+            updateTiming("DNS", performance.timing.domainLookupStart, performance.timing.domainLookupEnd);
+            updateTiming("TCP", performance.timing.connectStart, performance.timing.connectEnd);
+            updateTiming("Req", performance.timing.requestStart, performance.timing.responseStart);
+            updateTiming("Res", performance.timing.responseStart, performance.timing.responseEnd);
+        }
+
+        return {
+            init: init
+        };
+    })(toolBar));
+
+    //
+    // Events
+    //
+    components.push((function(tb) {
+        var metricUpdated = {};
+
+        function updateTiming(name, start, end) {
+            if (metricUpdated[name]) {
+                return;
+            }
+
+            if (start && end) {
+                tb.update("Events", name, end - start);
+
+                metricUpdated[name] = true;
+            }
+        }
+
         function updateTimings() {
             var tti = window.BOOMR && BOOMR.plugins && BOOMR.plugins.Continuity && BOOMR.plugins.Continuity.metrics.timeToInteractive();
 
@@ -281,13 +314,7 @@ if (window && window.requestAnimationFrame && "performance" in window && window.
         }
 
         function init() {
-            tb.register("Timings", ["DNS", "TCP", "Req", "Res", "DCL", "Load", "TTI"]);
-
-            // these should all be ready on startup
-            updateTiming("DNS", performance.timing.domainLookupStart, performance.timing.domainLookupEnd);
-            updateTiming("TCP", performance.timing.connectStart, performance.timing.connectEnd);
-            updateTiming("Req", performance.timing.requestStart, performance.timing.responseStart);
-            updateTiming("Res", performance.timing.responseStart, performance.timing.responseEnd);
+            tb.register("Events", ["DCL", "Load", "TTI"]);
 
             setTimeout(updateTimings, 100);
         }
