@@ -455,6 +455,18 @@ if (window && window.requestAnimationFrame && "performance" in window && window.
             // TODO: Tooltips
             tb.register("Resources", ["#", "KB", "TAO", "Cached", "Offload %", "Offload KB", "Edge"]);
 
+            document.addEventListener("onBoomerangLoaded", function({detail: {BOOMR}}) {
+                BOOMR.subscribe("onbeacon", function({t_other}) {
+                    t_other.split(',').find(function(section) {
+                      var data = section.split('|')
+                      if (data[0] === 'custom0') {
+                        tb.update("Resources" ,"Edge", data[1])
+                        return true
+                      }
+                    })
+                })
+            })
+
             updateResources();
         }
 
