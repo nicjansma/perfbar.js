@@ -1,5 +1,5 @@
 // ==UserScript==
-// @name         DebugBar
+// @name         PerfBar
 // @namespace    http://nicj.net
 // @version      0.1
 // @author       Nic Jansma
@@ -41,11 +41,11 @@ if (window && window.requestAnimationFrame && "performance" in window && window.
     // Utility functions
     //
     function setState(name, value) {
-        GM_setValue("debugbar-" + name, value);
+        GM_setValue("perfbar-" + name, value);
     }
 
     function getState(name) {
-        return GM_getValue("debugbar-" + name);
+        return GM_getValue("perfbar-" + name);
     }
 
     //
@@ -97,7 +97,7 @@ if (window && window.requestAnimationFrame && "performance" in window && window.
 	        $ = window.jQuery;
 
             cssobj({
-                "#debugbar": {
+                "#perfbar": {
                     color: "white",
                     "font-size": "12px",
                     "font-family": "Monaco,Menlo,Consolas,\"Courier New\",monospace",
@@ -105,7 +105,7 @@ if (window && window.requestAnimationFrame && "performance" in window && window.
                     "margin": 0,
                     "padding": 0
                 },
-                ".debugbar-section": {
+                ".perfbar-section": {
                     display: "inline-block",
                     height: "100%",
                     padding: "5px 0 0 5px",
@@ -116,11 +116,11 @@ if (window && window.requestAnimationFrame && "performance" in window && window.
                         "margin-left": 0,
                     }
                 },
-                ".debugbar-section-title": {
+                ".perfbar-section-title": {
                     display: "inline-block",
                     "font-weight": "bold"
                 },
-                ".debugbar-component": {
+                ".perfbar-component": {
                     display: "inline-block",
                     padding: "0 5px 0 5px",
                     "border-right": "1px solid #aaa",
@@ -128,18 +128,18 @@ if (window && window.requestAnimationFrame && "performance" in window && window.
                         "border-right": "none"
                     }
                 },
-                ".debugbar-component-title": {
+                ".perfbar-component-title": {
                     display: "inline-block",
                     color: "#aaa",
                     padding: "0 5px 0 0"
                 },
-                ".debugbar-component-value": {
+                ".perfbar-component-value": {
                     display: "inline-block",
                     "font-weight": "bold",
                     padding: "0 5px 0 0",
                     "transition": "all 0.3s ease"
                 },
-                "button.debugbar-button": {
+                "button.perfbar-button": {
                     display: "inline-block",
                     height: "22px",
                     margin: "0 5px 0 5px",
@@ -160,7 +160,7 @@ if (window && window.requestAnimationFrame && "performance" in window && window.
             var initialHeight = document.readyState === "complete" ? TOOLBAR_HEIGHT : TOOLBAR_HEIGHT_LOADING;
 
             // graph template
-            toolBar$ = $('<div id="debugbar">')
+            toolBar$ = $('<div id="perfbar">')
                 .css({
                     height: initialHeight,
                     position: 'fixed',
@@ -204,8 +204,8 @@ if (window && window.requestAnimationFrame && "performance" in window && window.
         function register(section, components, css) {
             if (!sections[section]) {
                 // create the dom
-                var section$ = $("<div>").addClass("debugbar-section").css(css || {});
-//                section$.append($("<div>").addClass("debugbar-section-title").text(section + ":"));
+                var section$ = $("<div>").addClass("perfbar-section").css(css || {});
+//                section$.append($("<div>").addClass("perfbar-section-title").text(section + ":"));
 
                 sections[section] = {
                     components: {},
@@ -216,9 +216,9 @@ if (window && window.requestAnimationFrame && "performance" in window && window.
 
                 (components || []).forEach(function(comp) {
                     // create the dom
-                    var div$ = $("<div>").addClass("debugbar-component");
-                    div$.append($("<div>").addClass("debugbar-component-title").text(comp));
-                    div$.append($("<div>").addClass("debugbar-component-value").text("--"));
+                    var div$ = $("<div>").addClass("perfbar-component");
+                    div$.append($("<div>").addClass("perfbar-component-title").text(comp));
+                    div$.append($("<div>").addClass("perfbar-component-value").text("--"));
 
                     sections[section].components[comp] = {
                         $: div$
@@ -230,7 +230,7 @@ if (window && window.requestAnimationFrame && "performance" in window && window.
         }
 
         function update(section, component, text, css) {
-            var el$ = sections[section].components[component].$.find(".debugbar-component-value");
+            var el$ = sections[section].components[component].$.find(".perfbar-component-value");
 
             // pop new values in first with a change of color
             if (el$.text() != text && !css) {
@@ -256,7 +256,7 @@ if (window && window.requestAnimationFrame && "performance" in window && window.
 
         function addButton(name, callback) {
             // create the dom
-            var div$ = $("<button>").addClass("debugbar-button").text(name);
+            var div$ = $("<button>").addClass("perfbar-button").text(name);
 
             toolBar$.append(div$);
 
@@ -521,9 +521,9 @@ if (window && window.requestAnimationFrame && "performance" in window && window.
         function init() {
             var menuButton$ = tb.addButton("Menu");
 
-            menuButton$.addClass("debugbar-context-menu")
+            menuButton$.addClass("perfbar-context-menu")
                 .parent().contextMenu({
-                    selector: ".debugbar-context-menu",
+                    selector: ".perfbar-context-menu",
                     trigger: 'left',
                     build: function(triggerElement$, e) {
                         return {
@@ -614,7 +614,7 @@ if (window && window.requestAnimationFrame && "performance" in window && window.
     document.addEventListener('readystatechange', init, false);
 
     //
-    // DebugBar Options
+    // PerfBar Options
     //
 
     //
@@ -669,9 +669,9 @@ if (window && window.requestAnimationFrame && "performance" in window && window.
                 return isAttached(elem.parentNode)
             }
 
-            var debugbar = document.getElementById('debugbar')
+            var perfbar = document.getElementById('perfbar')
             if (delayedEvents.indexOf(arguments[0]) === -1 ||
-                (debugbar && debugbar.contains(this)) ||
+                (perfbar && perfbar.contains(this)) ||
                 !isAttached(this)) {
                 ael.apply(_this, args);
                 return;
