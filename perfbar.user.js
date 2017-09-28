@@ -105,14 +105,19 @@ var UW = unsafeWindow;
                     "font-size": "12px",
                     "font-family": "Monaco,Menlo,Consolas,\"Courier New\",monospace",
                     "line-height": "18px",
-                    "margin": 0,
-                    "padding": 0
+                    margin: 0,
+                    padding: 0,
+                    position: 'fixed',
+                    "z-index": Number.MAX_SAFE_INTEGER,
+                    background: "#404040",
+                    opacity: 0.9,
+                    "box-shadow": "inset 0 0 10px 1px #000"
                 },
                 ".perfbar-section": {
                     display: "inline-block",
                     height: "100%",
                     padding: "5px 0 0 5px",
-                    "margin-left": "20px",
+                    "margin-left": "5px",
                     "border-left": "solid 2px #ccc",
                     "&:first-child": {
                         "border-left": "none",
@@ -166,12 +171,7 @@ var UW = unsafeWindow;
             toolBar$ = $('<div id="perfbar">')
                 .css({
                     height: initialHeight,
-                    position: 'fixed',
-                    "z-index": Number.MAX_SAFE_INTEGER,
-                    top: $(window).height() - initialHeight,
-                    background: "#404040",
-                    opacity: 0.9,
-                    "box-shadow": "inset 0 0 10px 1px #000"
+                    top: $(window).height() - initialHeight
                 });
 
             // fill the screen width
@@ -187,6 +187,8 @@ var UW = unsafeWindow;
                 $(window).load(function() {
                     // resize to regular height
                     toolBar$.height(TOOLBAR_HEIGHT);
+
+                    updateToolbarHeight();
                 });
             }
         }
@@ -208,7 +210,6 @@ var UW = unsafeWindow;
             if (!sections[section]) {
                 // create the dom
                 var section$ = $("<div>").addClass("perfbar-section").css(css || {});
-//                section$.append($("<div>").addClass("perfbar-section-title").text(section + ":"));
 
                 sections[section] = {
                     components: {},
