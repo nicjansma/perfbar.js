@@ -2,7 +2,7 @@
 // @name         PerfBar
 // @namespace    http://nicj.net
 // @version      0.1
-// @author       Nic Jansma
+// @author       Nic Jansma, Charlie Vazac
 // @grant        GM_addStyle
 // @grant        GM_setValue
 // @grant        GM_getValue
