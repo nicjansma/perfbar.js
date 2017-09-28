@@ -297,6 +297,22 @@ if (window && window.requestAnimationFrame && "performance" in window && window.
                 metricUpdated[name] = true;
             }
         }
+        function updateReq() {
+            let edgeTime = 0
+            for (const {name: url, serverTiming} of performance.getEntriesByType('navigation')) {
+                for (const {name, metric, duration, value} of serverTiming) {
+                    if (['cret', 'ctt'].indexOf(name || metric) !== -1) {
+                        edgeTime += (typeof duration !== 'undefined' ? duration : value)
+                    }
+                }
+            }
+
+            if (!edgeTime) {
+                updateTiming("Req", performance.timing.requestStart, performance.timing.responseStart);
+            } else {
+                tb.update("Timings", "Req", `${performance.timing.responseStart - performance.timing.requestStart} (${edgeTime})`)
+            }
+        }
 
         function init() {
             tb.register("Timings", ["DNS", "TCP", "Req", "Res"]);
@@ -304,7 +320,7 @@ if (window && window.requestAnimationFrame && "performance" in window && window.
             // these should all be ready on startup
             updateTiming("DNS", performance.timing.domainLookupStart, performance.timing.domainLookupEnd);
             updateTiming("TCP", performance.timing.connectStart, performance.timing.connectEnd);
-            updateTiming("Req", performance.timing.requestStart, performance.timing.responseStart);
+            updateReq()
             updateTiming("Res", performance.timing.responseStart, performance.timing.responseEnd);
         }
 
