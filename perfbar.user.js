@@ -301,6 +301,22 @@ var UW = unsafeWindow;
                 metricUpdated[name] = true;
             }
         }
+        function updateReq() {
+            let edgeTime = 0
+            for (const {name: url, serverTiming} of performance.getEntriesByType('navigation')) {
+                for (const {name, metric, duration, value} of serverTiming) {
+                    if (['cret', 'ctt'].indexOf(name || metric) !== -1) {
+                        edgeTime += (typeof duration !== 'undefined' ? duration : value)
+                    }
+                }
+            }
+
+            if (!edgeTime) {
+                updateTiming("Req", performance.timing.requestStart, performance.timing.responseStart);
+            } else {
+                tb.update("Timings", "Req", `${performance.timing.responseStart - performance.timing.requestStart} (${edgeTime})`)
+            }
+        }
 
         function init() {
             tb.register("Timings", ["DNS", "TCP", "Req", "Res"]);
@@ -308,7 +324,7 @@ var UW = unsafeWindow;
             // these should all be ready on startup
             updateTiming("DNS", performance.timing.domainLookupStart, performance.timing.domainLookupEnd);
             updateTiming("TCP", performance.timing.connectStart, performance.timing.connectEnd);
-            updateTiming("Req", performance.timing.requestStart, performance.timing.responseStart);
+            updateReq()
             updateTiming("Res", performance.timing.responseStart, performance.timing.responseEnd);
         }
 
@@ -472,6 +488,18 @@ var UW = unsafeWindow;
         function init() {
             // TODO: Tooltips
             tb.register("Resources", ["#", "KB", "TAO", "Cached", "Offload %", "Offload KB", "Edge"]);
+
+            document.addEventListener("onBoomerangLoaded", function({detail: {BOOMR}}) {
+                BOOMR.subscribe("onbeacon", function({t_other}) {
+                    t_other.split(',').find(function(section) {
+                      var data = section.split('|')
+                      if (data[0] === 'custom0') {
+                        tb.update("Resources" ,"Edge", data[1])
+                        return true
+                      }
+                    })
+                })
+            })
 
             updateResources();
         }
