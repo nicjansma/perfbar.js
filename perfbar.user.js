@@ -406,7 +406,7 @@ var UW = unsafeWindow;
 
         function init() {
             tb.register("Events", [
-                {name: "Paint", title: "First Paint"}
+                {name: "Paint", title: "First Paint"},
                 {name: "DCL", title: "DOMContentLoaded"},
                 {name: "TTVR", title: "Time to Visually Ready"},
                 {name: "Load", title: "Load Time"},
