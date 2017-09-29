@@ -223,16 +223,19 @@ var UW = unsafeWindow;
                 toolBar$.append(sections[section].$);
 
                 (components || []).forEach(function(comp) {
+                    var name = comp.name ? comp.name : comp;
+                    var title = comp.title ? comp.title : name;
+
                     // create the dom
                     var div$ = $("<div>").addClass("perfbar-component");
-                    div$.append($("<div>").addClass("perfbar-component-title").text(comp));
-                    div$.append($("<div>").addClass("perfbar-component-value").text("--"));
+                    div$.append($("<div>").addClass("perfbar-component-title").text(name).attr('title', title));
+                    div$.append($("<div>").addClass("perfbar-component-value").text("--").attr('title', title));
 
-                    sections[section].components[comp] = {
+                    sections[section].components[name] = {
                         $: div$
                     };
 
-                    sections[section].$.append(sections[section].components[comp].$);
+                    sections[section].$.append(sections[section].components[name].$);
                 });
             }
         }
@@ -323,7 +326,12 @@ var UW = unsafeWindow;
         }
 
         function init() {
-            tb.register("Timings", ["DNS", "TCP", "Req", "Res"]);
+            tb.register("Timings", [
+                {name: "DNS", title: "Domain Name Loopup Duration"},
+                {name: "TCP", title: "TCP Connection Duration"},
+                {name: "Req", title: "HTTP Request Time (responseStart - requestStart)"},
+                {name: "Res", title: "HTTP Response Time (responseEnd - responseStart)"}
+            ]);
 
             // these should all be ready on startup
             updateTiming("DNS", performance.timing.domainLookupStart, performance.timing.domainLookupEnd);
@@ -379,7 +387,13 @@ var UW = unsafeWindow;
         }
 
         function init() {
-            tb.register("Events", ["Paint", "DCL", "TTVR", "Load", "TTI"]);
+            tb.register("Events", [
+                {name: "Paint", title: "First Paint"}
+                {name: "DCL", title: "DOMContentLoaded"},
+                {name: "TTVR", title: "Time to Visually Ready"},
+                {name: "Load", title: "Load Time"},
+                {name: "TTI", title: "Time to Interactive"}
+            ]);
 
             setTimeout(updateTimings, 100);
         }
@@ -438,7 +452,12 @@ var UW = unsafeWindow;
         window.requestAnimationFrame(frame);
 
         function init() {
-            tb.register("Realtime", ["FPS", "LongTasks", "Rage Clicks"]);
+            initialized = true;
+            tb.register("Realtime", [
+                {name: "FPS", title: "Frames Per Second"},
+                {name: "LongTasks", title: "Long Tasks"},
+                {name: "Rage Clicks", title: "Race Clicks"}
+            ]);
 
             if (UW.BOOMR && UW.BOOMR.subscribe) {
                 UW.BOOMR.subscribe("rage_click", onRageClick);
@@ -490,8 +509,15 @@ var UW = unsafeWindow;
         }
 
         function init() {
-            // TODO: Tooltips
-            tb.register("Resources", ["#", "KB", "TAO", "Cached", "Offload %", "Offload KB", "Edge"]);
+            tb.register("Resources", [
+                {name: "#", title: "Resource Count"},
+                {name: "KB", title: "Transfer Size (KB)"},
+                {name: "TAO", title: "Same-Origin or resources with Timing-Allow-Origin set"},
+                {name: "Cached", title: "Same-Origin or TAO resources that are cached"},
+                {name: "Offload %", title: "Edge Offload %"},
+                {name: "Offload KB", title: "Edge Offload KB"},
+                {name: "Edge", title: "Edge ???"}
+            ]);
 
             document.addEventListener("onBoomerangLoaded", function({detail: {BOOMR}}) {
                 BOOMR.subscribe("onbeacon", function({t_other}) {
