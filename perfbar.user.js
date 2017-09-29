@@ -706,9 +706,6 @@ var UW = unsafeWindow;
                     trigger: 'left',
                     build: function(triggerElement$, e) {
                         return {
-                            callback: function(key, options) {
-                                console.log(key);
-                            },
                             items: {
                                 "jank": {
                                     name: "Add Jank",
