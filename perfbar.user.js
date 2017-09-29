@@ -329,7 +329,7 @@ var UW = unsafeWindow;
         function updateReq() {
             let edgeTime = 0
             for (const {name: url, serverTiming} of performance.getEntriesByType('navigation')) {
-                for (const {name, metric, duration, value} of serverTiming) {
+                for (const {name, metric, duration, value} of (serverTiming || [])) {
                     if (['cret', 'ctt'].indexOf(name || metric) !== -1) {
                         edgeTime += (typeof duration !== 'undefined' ? duration : value)
                     }
@@ -816,7 +816,7 @@ var UW = unsafeWindow;
             }
             function cachedAtEdge({name, serverTiming}) {
                 var origin
-                serverTiming.forEach(function(st) {
+                (serverTiming || []).forEach(function(st) {
                     if (st.name === 'origin' || st.metric === 'origin') {
                         console.info(name, st.description)
                         origin = st.description === false
