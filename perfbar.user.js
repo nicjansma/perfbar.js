@@ -162,6 +162,10 @@ var UW = unsafeWindow;
                 },
                 ".context-menu-input>label>input[type=checkbox], .context-menu-input>label>input[type=radio]": {
                     display: "inline-block"
+                },
+                ".context-menu-list > li.context-menu-item": {
+                    "font-size": "12px",
+                    "font-family": "Monaco,Menlo,Consolas,\"Courier New\",monospace",
                 }
             });
 
