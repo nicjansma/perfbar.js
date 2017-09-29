@@ -278,11 +278,29 @@ var UW = unsafeWindow;
             return div$;
         }
 
+        function addContextMenu(section, component, callback) {
+            if (!sections[section].components[component].$.contextMenu) {
+                setTimeout(function() {
+                    addContextMenu(section, component, callback);
+                }, 100);
+
+                return;
+            }
+
+            sections[section].components[component].$
+                .contextMenu({
+                    selector: "*",
+                    trigger: 'hover',
+                    build: callback
+                });
+        }
+
         return {
             init: init,
             register: register,
             update: update,
-            addButton: addButton
+            addButton: addButton,
+            addContextMenu: addContextMenu
         };
     })();
 
@@ -458,6 +476,86 @@ var UW = unsafeWindow;
                 {name: "LongTasks", title: "Long Tasks"},
                 {name: "Rage Clicks", title: "Race Clicks"}
             ]);
+
+            tb.addContextMenu("Realtime", "LongTasks", function(menuButton$) {
+                var items = {
+                    self: { name: "Self", items: {} },
+                    "same-origin": { name: "Same-Origin", items: {} },
+                    "cross-origin": { name: "Cross-Origin", items: {} },
+                    "multiple-contexts": { name: "Multiple Contexts", items: {} },
+                    "unknown": { name: "Unknown", items: {} },
+                };
+
+                var i = 0;
+                longTasks.forEach(function(longTask) {
+                    var which = longTask.name;
+                    if (which.indexOf('cross-origin') !== -1) {
+                        which = 'cross-origin';
+                    } else if (which.indexOf('same-origin') !== -1) {
+                        which = 'cross-origin';
+                    }
+
+                    var attr = "";
+                    if (longTask && longTask.attribution && longTask.attribution.length) {
+                        attr = longTask.attribution[0].containerType ? longTask.attribution[0].containerType : "";
+                        attr += " " + longTask.attribution[0].containerSrc ? longTask.attribution[0].containerSrc : "";
+                        attr += " " + longTask.attribution[0].containerId ? longTask.attribution[0].containerId : "";
+                        attr += " " + longTask.attribution[0].containerName ? longTask.attribution[0].containerName : "";
+                    }
+
+                    if (!items[which]) {
+                        debugger;
+                        return;
+                    }
+
+                    items[which].items["item" + (++i)] = {
+                        name: longTask.duration + "ms (" + attr + ")"
+                    };
+                });
+
+                for (var itemName in items) {
+                    if (Object.keys(items[itemName].items).length === 0) {
+                        delete items[itemName];
+                    }
+                }
+
+                return {
+                    items: items,
+                    position: function(opt){
+                        // Position using jQuery.ui.position
+                        // http://api.jqueryui.com/position/
+                        opt.$menu
+                            .position({ my: "center bottom", at: "center top", of: menuButton$})
+                            .css("position", "fixed");
+                    }
+                };
+            });
+
+            tb.addContextMenu("Realtime", "Rage Clicks", function(menuButton$) {
+                var items = {};
+
+                if (!rageClicks.length) {
+                    return false;
+                }
+
+                var i = 0;
+                rageClicks.forEach(function(rageClick) {
+                    items["item" + (++i)] = {
+                        name: rageClick.path + " @ " + Math.round(rageClick.when) + "ms"
+                    };
+                });
+
+                return {
+                    items: items,
+                    position: function(opt){
+                        // Position using jQuery.ui.position
+                        // http://api.jqueryui.com/position/
+                        opt.$menu
+                            .position({ my: "center bottom", at: "center top", of: menuButton$})
+                            .css("position", "fixed");
+                    }
+                };
+            });
 
             if (UW.BOOMR && UW.BOOMR.subscribe) {
                 UW.BOOMR.subscribe("rage_click", onRageClick);
