@@ -541,7 +541,7 @@ var UW = unsafeWindow;
             tb.register("Realtime", [
                 {name: "FPS", title: "Frames Per Second"},
                 {name: "LongTasks", title: "Long Tasks"},
-                {name: "Rage Clicks", title: "Race Clicks"}
+                {name: "Rage Clicks", title: "Rage Clicks"}
             ]);
 
             tb.addContextMenu("Realtime", "LongTasks", function(menuButton$) {
@@ -562,21 +562,31 @@ var UW = unsafeWindow;
                         which = 'cross-origin';
                     }
 
-                    var attr = "";
+                    var desc = "";
                     if (longTask && longTask.attribution && longTask.attribution.length) {
-                        attr = longTask.attribution[0].containerType ? longTask.attribution[0].containerType : "";
-                        attr += " " + longTask.attribution[0].containerSrc ? longTask.attribution[0].containerSrc : "";
-                        attr += " " + longTask.attribution[0].containerId ? longTask.attribution[0].containerId : "";
-                        attr += " " + longTask.attribution[0].containerName ? longTask.attribution[0].containerName : "";
+                        var attr = longTask.attribution[0];
+                        desc = attr.containerType ? longTask.attribution[0].containerType : "";
+
+                        if (attr.containerId) {
+                            desc += " " + attr.containerId;
+                        }
+
+                        if (attr.containerName) {
+                            desc += " " + attr.containerName;
+                        }
+
+                        if (attr.containerSrc) {
+                            var src = attr.containerSrc.replace(/https?:\/\//, "");
+                            desc += " " + src.substr(0, src.indexOf("/"));
+                        }
                     }
 
                     if (!items[which]) {
-                        debugger;
                         return;
                     }
 
                     items[which].items["item" + (++i)] = {
-                        name: longTask.duration + "ms (" + attr + ")"
+                        name: longTask.duration + "ms (" + desc + ")"
                     };
                 });
 
