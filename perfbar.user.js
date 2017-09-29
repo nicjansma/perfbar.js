@@ -685,7 +685,10 @@ var UW = unsafeWindow;
             ]);
 
             document.addEventListener("onBoomerangLoaded", function({detail: {BOOMR}}) {
-                BOOMR.subscribe("onbeacon", function({t_other}) {
+                BOOMR.subscribe("onbeacon", function({t_other, ...beacon}) {
+                    if (beacon.hasOwnProperty('cmet.offload')) {
+                      tb.update("Resources", "Offload KB", Math.round(beacon['cmet.offload'] / 1000))
+                    }
                     t_other.split(',').find(function(section) {
                       var data = section.split('|')
                       if (data[0] === 'custom0') {
@@ -753,13 +756,40 @@ var UW = unsafeWindow;
         }
 
         function toggleDisableEdgeCache() {
+          const cookieName = 'AK_FORCE_ORIGIN'
+          var force = readCookie(cookieName)
+          if (force === 'true') {
+            return createCookie(cookieName, '', -1);
+          }
+          createCookie(cookieName, 'true', 1)
         }
 
         function toggleShowCacheStatus() {
             setState("cacheStatus", getState("cacheStatus") ? false : true);
         }
 
-        function init() {
+        function readCookie(name) {
+          var nameEQ = name + "=";
+          var ca = document.cookie.split(';');
+          for (var i = 0; i < ca.length; i++) {
+            var c = ca[i];
+            while (c.charAt(0) == ' ') c = c.substring(1, c.length);
+            if (c.indexOf(nameEQ) == 0) return c.substring(nameEQ.length, c.length);
+          }
+          return null;
+        }
+
+      function createCookie(name,value,days) {
+        var expires = "";
+        if (days) {
+          var date = new Date();
+          date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
+          expires = "; expires=" + date.toUTCString();
+        }
+        document.cookie = name + "=" + value + expires + "; path=/";
+      }
+
+      function init() {
             if (!UW.jQuery || !UW.jQuery.contextMenu) {
                 setTimeout(init, 100);
                 return;
@@ -789,7 +819,8 @@ var UW = unsafeWindow;
                                 "disableEdgeCache": {
                                     name: "Disable Edge Cache",
                                     type: "checkbox",
-                                    events: { click: toggleDisableEdgeCache }
+                                    events: { click: toggleDisableEdgeCache },
+                                    selected: readCookie('AK_FORCE_ORIGIN') === 'true'
                                 },
                                 "showCacheStatus": {
                                     name: "Show Cache Status",
