@@ -436,7 +436,7 @@ var UW = unsafeWindow;
         var frameStartTime = performance.now();
 
         // rage clicks
-        var rageClicks = 0;
+        var rageClicks = [];
 
         /**
          * requestAnimationFrame callback
@@ -460,8 +460,49 @@ var UW = unsafeWindow;
             frameStartTime = performance.now();
         }
 
-        function onRageClick() {
-            tb.update("Realtime", "Rage Clicks", ++rageClicks, {
+        function onRageClick(e) {
+            var path = "";
+            var node = jQuery(e.target);
+            var stop = false;
+
+            while (node.length && !stop) {
+                var realNode = node[0];
+                var name = realNode.localName;
+
+                if (!name) {
+                    break;
+                }
+
+                name = name.toLowerCase();
+
+                // if it has an ID, stop here
+                if (node.attr('id')) {
+                    name = name + "#" + node.attr('id');
+                    stop = true;
+                }
+
+                if (node.attr('class')) {
+                    name = name + "." + node.attr('class').trim().split(" ")[0].trim();;
+                }
+
+                var parent = node.parent();
+
+                path = name + (path ? '>' + path : '');
+                node = parent;
+            }
+
+            rageClicks.push({
+                when: performance.now(),
+                x: e.clientX,
+                y: e.clientY,
+                path: path
+            });
+
+            if (BOOMR.sendMetric) {
+                BOOMR.sendMetric("Rage Clicks", 1);
+            }
+
+            tb.update("Realtime", "Rage Clicks", rageClicks.length, {
                 color: "red"
             });
         }
@@ -857,7 +898,6 @@ var UW = unsafeWindow;
                 ael.apply(_this, args);
                 _this.removeEventListener(eventName, rage);
             }, delay)
-
 
             var rage = function(e) {
                 e.stopPropagation();
@@ -4961,7 +5001,7 @@ function initEmbeddedBoomerang() {
 
                     if ((sameClicks + 1) >= RAGE_CLICK_THRESHOLD) {
                         rageClicks++;
-                        BOOMR.fireEvent("rage_click");
+                        BOOMR.fireEvent("rage_click", e);
                     }
                 }
                 else {
