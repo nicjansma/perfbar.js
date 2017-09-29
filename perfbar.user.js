@@ -428,6 +428,7 @@ var UW = unsafeWindow;
         //
         // Local Members
         //
+        var initialized = false;
 
         // total frames seen
         var totalFrames = 0;
@@ -437,6 +438,11 @@ var UW = unsafeWindow;
 
         // rage clicks
         var rageClicks = [];
+
+        if (!BOOMR.longTasks) {
+            BOOMR.longTasks = [];
+        }
+        var longTasks = BOOMR.longTasks;
 
         /**
          * requestAnimationFrame callback
@@ -506,6 +512,26 @@ var UW = unsafeWindow;
                 color: "red"
             });
         }
+
+        function onPerformanceObserver(list) {
+			var entries = list.getEntries();
+			Array.prototype.push.apply(longTasks, entries);
+
+            if (BOOMR.sendMetric) {
+                BOOMR.sendMetric("LongTasks", entries.length);
+            }
+
+            // add to the timeline
+            if (initialized) {
+                tb.update("Realtime", "LongTasks", longTasks.length, {
+                    color: "red"
+                });
+            }
+		}
+
+        // PerformanceObserver
+        var perfObserver = new UW.PerformanceObserver(onPerformanceObserver);
+        perfObserver.observe({ entryTypes: ["longtask"] });
 
         // start out the first frame
         window.requestAnimationFrame(frame);
@@ -4224,7 +4250,7 @@ function initEmbeddedBoomerang() {
             t.register("longtask", COMPRESS_MODE_SMALL_NUMBERS);
 
             // Long Tasks array
-            var longTasks = [];
+            var longTasks = BOOMR.longTasks || [];
 
             // whether or not we're enabled
             var enabled = true;
