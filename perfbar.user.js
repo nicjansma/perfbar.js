@@ -781,6 +781,14 @@ var UW = unsafeWindow;
             setState("delayFrameworkHandlers", getState("delayFrameworkHandlers") ? false : true);
         }
 
+        function toggleAddBadThirdPartyDuringLoad() {
+            setState("badThirdParty", getState("badThirdParty") ? false : true);
+        }
+
+        function forceBoomerangContinuityBeta() {
+            setState("forceBoomerangContinuityBeta", getState("forceBoomerangContinuityBeta") ? false : true);
+        }
+
         function toggleDisableEdgeCache() {
           const cookieName = 'AK_FORCE_ORIGIN'
           var force = readCookie(cookieName)
@@ -836,6 +844,12 @@ var UW = unsafeWindow;
                                     events: { click: toggleJank },
                                     selected: jankInterval
                                 },
+                                "addBadThirdPartyDuringLoad": {
+                                    name: "Add Bad Third-Party During Load",
+                                    type: "checkbox",
+                                    events: { click: toggleAddBadThirdPartyDuringLoad },
+                                    selected: getState("badThirdParty"),
+                                },
                                 "delayFrameworks": {
                                     name: "Delay Framework Handlers During Load",
                                     type: "checkbox",
@@ -853,6 +867,12 @@ var UW = unsafeWindow;
                                     type: "checkbox",
                                     events: { click: toggleShowCacheStatus },
                                     selected: getState("cacheStatus"),
+                                },
+                                "forceBoomerangVersion": {
+                                    name: "Force Boomerang Continuity Beta",
+                                    type: "checkbox",
+                                    events: { click: forceBoomerangContinuityBeta },
+                                    selected: getState("forceBoomerangContinuityBeta"),
                                 }
                             },
                             position: function(opt){
@@ -1003,6 +1023,40 @@ var UW = unsafeWindow;
 
             ael.call(_this, eventName, rage);
         }
+    }
+
+    function loadIframe(src) {
+        var iframe = document.createElement("iframe");
+        iframe.id = "bad-third-party";
+        iframe.src = src;
+        (iframe.frameElement || iframe).style.cssText = "width:0;height:0;border:0;display:none;";
+        var where = document.getElementsByTagName("head")[0];
+        where.parentNode.insertBefore(iframe, where);
+
+        return iframe;
+    }
+
+    //
+    // Add Bad Third-Party During Load
+    //
+    if (getState("badThirdParty")) {
+        var thirdPartyFrame = loadIframe("https://nicj.net/dev/bad-third-party.html");
+        if (document.readyState === "complete") {
+            thirdPartyFrame.contentWindow.postMessage("busy", "*")
+        } else {
+            window.addEventListener("load", function() {
+                setTimeout(function() {
+                    thirdPartyFrame.contentWindow.postMessage("busy", "*");
+                }, 10);
+            }, false);
+        };
+    }
+
+    //
+    // Force the Boomerang Continuity Beta
+    //
+    if (getState("forceBoomerangContinuityBeta")) {
+        loadIframe("https://c.go-mpulse.net/boomerang/boomerang-debug.html?version=1.10038.0")
     }
 })();
 
