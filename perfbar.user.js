@@ -166,6 +166,9 @@ var UW = unsafeWindow;
                 ".context-menu-list > li.context-menu-item": {
                     "font-size": "12px",
                     "font-family": "Monaco,Menlo,Consolas,\"Courier New\",monospace",
+                },
+                ".context-menu-item.context-menu-hover": {
+                    "background-color": "#bbb"
                 }
             });
 
