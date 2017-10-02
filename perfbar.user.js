@@ -385,9 +385,12 @@ var UW = unsafeWindow;
             var tti = UW.BOOMR && UW.BOOMR.plugins && UW.BOOMR.plugins.Continuity && UW.BOOMR.plugins.Continuity.metrics.timeToInteractive && UW.BOOMR.plugins.Continuity.metrics.timeToInteractive();
             var ttvr = UW.BOOMR && UW.BOOMR.plugins && UW.BOOMR.plugins.Continuity && UW.BOOMR.plugins.Continuity.metrics.timeToVisuallyReady && UW.BOOMR.plugins.Continuity.metrics.timeToVisuallyReady();
 
-            var paint = UW.performance.getEntriesByType('paint').find(function({name}) { return name === 'first-paint' })
-            var truthy = 1
-            paint && updateTiming("Paint", truthy, truthy + Math.round(paint.startTime))
+            var firstPaint = UW.performance.getEntriesByType('paint').find(function({name}) { return name === 'first-paint' })
+            firstPaint && updateTiming("FP", performance.timing.navigationStart, performance.timing.navigationStart + Math.round(firstPaint.startTime))
+
+            var firstContentfulPaint = UW.performance.getEntriesByType('paint').find(function({name}) { return name === 'first-contentful-paint' })
+            firstContentfulPaint && updateTiming("FCP", performance.timing.navigationStart, performance.timing.navigationStart + Math.round(firstContentfulPaint.startTime))
+
             updateTiming("DCL", performance.timing.navigationStart, performance.timing.domContentLoadedEventStart);
             updateTiming("Load", performance.timing.navigationStart, performance.timing.loadEventStart);
 
@@ -406,7 +409,8 @@ var UW = unsafeWindow;
 
         function init() {
             tb.register("Events", [
-                {name: "Paint", title: "First Paint"},
+                {name: "FP", title: "First Paint"},
+                {name: "FCP", title: "First Contentful Paint"},
                 {name: "DCL", title: "DOMContentLoaded"},
                 {name: "TTVR", title: "Time to Visually Ready"},
                 {name: "Load", title: "Load Time"},
