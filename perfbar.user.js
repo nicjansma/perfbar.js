@@ -298,12 +298,64 @@ var UW = unsafeWindow;
                 });
         }
 
-        return {
-            init: init,
-            register: register,
-            update: update,
-            addButton: addButton,
-            addContextMenu: addContextMenu
+        function findServerTimingEntryByName(rt, seek) {
+          return (rt.serverTiming || []).find(function ({name, metric}) {
+            return name === seek || metric === seek
+          })
+        }
+        function hasPermissiveTAO(rt) {
+          return rt.encodedBodySize > 0
+        }
+
+       return {
+          init: init,
+          register: register,
+          update: update,
+          addButton: addButton,
+          addContextMenu: addContextMenu,
+          hasPermissiveTAO: hasPermissiveTAO,
+          formatResourceData: function (count, bytes) {
+            return `${count}# ${Math.round(bytes / 1024)}KB`
+          },
+          cachedInBrowser: function (rt) {
+            return hasPermissiveTAO(rt)
+              ? rt.transferSize === 0
+              : rt.duration < 30
+          },
+          cachedAtEdge: function (rt) {
+            let origin
+            const entry = findServerTimingEntryByName(rt, 'origin')
+            if (entry) {
+              origin = entry.description === 'true'
+            }
+            return origin === false
+          },
+          getStaticResources: function () {
+            if (!UW.BOOMR || !UW.BOOMR.plugins || !UW.BOOMR.plugins.ResourceTiming) {
+              return []
+            }
+            var ret = UW.BOOMR.plugins.ResourceTiming.getFilteredResourceTiming()
+            var entries = Array.isArray(ret) ? ret : ret.entries
+            return entries.filter(function ({name, initiatorType}) {
+              if (initiatorType === 'html') return false
+              if (initiatorType === 'xmlhttprequest') {
+                  if (name.indexOf('akstat.io') > -1) {
+                      return false
+                  }
+              }
+              return true
+            })
+          },
+          calcEdgeTime: function (rt) {
+            let edgeTime = 0;
+            ['cret', 'ctt'].forEach(function (name) {
+              const entry = findServerTimingEntryByName(rt, name)
+              if (entry) {
+                edgeTime += entry.duration || entry.value
+              }
+            })
+            return edgeTime
+          }
         };
     })();
 
@@ -331,12 +383,8 @@ var UW = unsafeWindow;
         }
         function updateReq() {
             let edgeTime = 0
-            for (const {name: url, serverTiming} of performance.getEntriesByType('navigation')) {
-                for (const {name, metric, duration, value} of (serverTiming || [])) {
-                    if (['cret', 'ctt'].indexOf(name || metric) !== -1) {
-                        edgeTime += (typeof duration !== 'undefined' ? duration : value)
-                    }
-                }
+            for (const rt of performance.getEntriesByType('navigation')) {
+              edgeTime += tb.calcEdgeTime(rt)
             }
 
             if (!edgeTime) {
@@ -665,73 +713,106 @@ var UW = unsafeWindow;
     // Resources
     //
     components.push((function(tb) {
-        var resLength = 0;
+      var resLength = 0;
 
-        function updateResources() {
-            if (!UW.BOOMR || !UW.BOOMR.plugins || !UW.BOOMR.plugins.ResourceTiming) {
-                return setTimeout(updateResources, 1000);
+      function updateResources() {
+        var resources = tb.getStaticResources()
+
+        if (resources.length != resLength) {
+          tb.update("Resources", "Total", tb.formatResourceData(resources.length, Math.floor(resources.reduce(function (sum, res) {
+            return sum + (res.encodedBodySize ? res.encodedBodySize : 0);
+          }, 0))));
+
+          tb.update("Resources", "TAO", Math.round(resources.reduce(function (sum, res) {
+            return sum + (tb.hasPermissiveTAO(res) ? 1 : 0);
+          }, 0) / resources.length * 100) + "%");
+
+          let cachedCount = 0, cachedBytes = 0
+          resources.forEach(function (res) {
+            if (tb.cachedInBrowser(res)) {
+              cachedCount++
+              cachedBytes += res.encodedBodySize
             }
+          })
+          tb.update("Resources", "Cached", tb.formatResourceData(cachedCount, cachedBytes))
 
-            var resources = UW.BOOMR.plugins.ResourceTiming.getFilteredResourceTiming();
-            resources = resources.length ? resources : resources.entries;
-
-            if (resources.length != resLength) {
-                tb.update("Resources", "#", resources.length);
-
-                tb.update("Resources", "KB", Math.floor(resources.reduce(function(sum, res) {
-                    return sum + (res.transferSize ? res.transferSize : 0);
-                }, 0) / 1024));
-
-                tb.update("Resources", "TAO", Math.round(resources.reduce(function(sum, res) {
-                    return sum + (res.encodedBodySize > 0 ? 1 : 0);
-                }, 0) / resources.length * 100) + "%");
-
-                tb.update("Resources", "Cached", Math.round(resources.reduce(function(sum, res) {
-                    // TODO: Should we only use TAO?
-                    var cached = (res.encodedBodySize > 0 && res.transferSize === 0) || (res.duration < 30);
-
-                    return sum + (cached ? 1 : 0);
-                }, 0) / resources.length * 100) + "%");
-
-                resLength = resources.length;
-            }
-
-            setTimeout(updateResources, 1000);
+          resLength = resources.length;
         }
 
-        function init() {
-            tb.register("Resources", [
-                {name: "#", title: "Resource Count"},
-                {name: "KB", title: "Transfer Size (KB)"},
-                {name: "TAO", title: "Same-Origin or resources with Timing-Allow-Origin set"},
-                {name: "Cached", title: "Same-Origin or TAO resources that are cached"},
-                {name: "Offload %", title: "Edge Offload %"},
-                {name: "Offload KB", title: "Edge Offload KB"},
-                {name: "Edge", title: "Edge ???"}
-            ]);
+        setTimeout(updateResources, 1000);
+      }
 
-            document.addEventListener("onBoomerangLoaded", function({detail: {BOOMR}}) {
-                BOOMR.subscribe("onbeacon", function({t_other, ...beacon}) {
-                    if (beacon.hasOwnProperty('cmet.offload')) {
-                      tb.update("Resources", "Offload KB", Math.round(beacon['cmet.offload'] / 1000))
-                    }
-                    t_other.split(',').find(function(section) {
-                      var data = section.split('|')
-                      if (data[0] === 'custom0') {
-                        tb.update("Resources" ,"Edge", data[1])
-                        return true
-                      }
-                    })
-                })
-            })
+      function init() {
+        tb.register("Resources", [
+          {name: "Total", title: "Total number of resources, total page weight (KB)"},
+          {name: "TAO", title: "Same-Origin or resources with Timing-Allow-Origin set"},
+          {name: "Cached", title: "Count and weight of resources served by the browser"},
+        ]);
+        updateResources()
+      }
 
-            updateResources();
-        }
-
-        return {
-            init: init
-        };
+      return {
+        init: init
+      };
     })(toolBar));
+
+  //
+  // CDN
+  //
+  components.push((function(tb) {
+    var resLength = 0;
+
+    function updateResources() {
+      var resources = tb.getStaticResources()
+      if (resources.length != resLength) {
+        const places = {
+          origin: {count: 0, bytes: 0},
+          edge: {count: 0, bytes: 0},
+          im: {count: 0, bytes: 0},
+        }
+        let edgeTime = 0
+        for (const rt of resources) {
+          const wasCachedAtEdge = tb.cachedAtEdge(rt)
+          if (wasCachedAtEdge) {
+            const disk = (rt.serverTiming || []).find(function ({name, metric}) {
+              return name === 'disk' || metric === 'disk'
+            })
+            if (disk) {
+              places.im.count++
+              places.im.bytes += (Number(disk.description) - rt.encodedBodySize)
+            }
+          }
+
+          if (!tb.cachedInBrowser(rt)) {
+            const place = wasCachedAtEdge ? places['edge'] : places['origin']
+            place.count++
+            place.bytes += rt.encodedBodySize
+            edgeTime += tb.calcEdgeTime(rt)
+          }
+        }
+
+        tb.update("CDN", "Edge", `${tb.formatResourceData(places.edge.count, places.edge.bytes)} ${edgeTime}ms`)
+        tb.update("CDN", "Origin", tb.formatResourceData(places.origin.count, places.origin.bytes))
+        tb.update("CDN", "IM", tb.formatResourceData(places.im.count, places.im.bytes))
+        resLength = resources.length;
+      }
+
+      setTimeout(updateResources, 1000);
+    }
+
+    function init() {
+      tb.register("CDN", [
+        {name: "Edge", title: "Count and weight of resources served by the edge"},
+        {name: "Origin", title: "Count and weight of resources served by the origin"},
+        {name: "IM", title: "Image Manager: Number of Resources processed by Image Manager -and- Total savings in KB"},
+      ]);
+      updateResources()
+    }
+
+    return {
+      init: init
+    };
+  })(toolBar));
 
     //
     // Controls
@@ -947,28 +1028,14 @@ var UW = unsafeWindow;
           if (!entry) return
 
           img.style.opacity = '0.5'
-          if (cachedInBrowser(entry)) {
+          if (toolBar.cachedInBrowser(entry)) {
             img.style.border = 'solid 3px green'
-          } else if (cachedAtEdge(entry)) {
+          } else if (toolBar.cachedAtEdge(entry)) {
             img.style.border = 'solid 3px blue'
           } else {
             img.style.border = 'solid 3px red'
           }
         })
-
-        function cachedInBrowser({requestStart, responseStart, transferSize}) {
-          return transferSize === 0 || (responseStart - requestStart < 20)
-        }
-
-        function cachedAtEdge({name, serverTiming}) {
-          var origin
-          (serverTiming || []).forEach(function (st) {
-            if (st.name === 'origin' || st.metric === 'origin') {
-              origin = st.description === 'true'
-            }
-          })
-          return origin === false
-        }
       })
     }
 
@@ -1170,31 +1237,28 @@ function initEmbeddedBoomerangPlugins() {
               count: 0
           }
           var {entries} = UW.BOOMR.plugins.ResourceTiming.getFilteredResourceTiming();
-          for (const entryType of ['resource']) {
-            for (const {name: url, serverTiming, transferSize, encodedBodySize} of entries) {
-              let origin, diskBytes = 0
-              for (const {name, metric, duration, value, description} of serverTiming) {
-                const _name = name || metric
-                const _duration = typeof duration !== 'undefined' ? duration : value
-                if (['cret', 'ctt'].indexOf(_name) !== -1) {
-                  edgeTime += _duration
-                }
-                if (_name === 'origin') {
-                  origin = description === 'true'
-                }
-                if (_name === 'disk') {
-                console.info('disk-cav', description, transferSize, encodedBodySize)
-                  diskBytes = Number(description)
-                }
+          for (const {name: url, serverTiming, transferSize, encodedBodySize} of entries) {
+            let origin, diskBytes = 0
+            for (const {name, metric, duration, value, description} of serverTiming) {
+              const _name = name || metric
+              const _duration = typeof duration !== 'undefined' ? duration : value
+              if (['cret', 'ctt'].indexOf(_name) !== -1) {
+                edgeTime += _duration
               }
+              if (_name === 'origin') {
+                origin = description === 'true'
+              }
+              if (_name === 'disk') {
+                diskBytes = Number(description)
+              }
+            }
 
-              total++
-              if (origin === false) {
-                offload.count++
-                if (diskBytes) {
-                  offload.bytes += diskBytes
-                }
-              } else console.info('url', url)
+            total++
+            if (origin === false) {
+              offload.count++
+              if (diskBytes) {
+                offload.bytes += diskBytes
+              }
             }
           }
 
