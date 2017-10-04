@@ -693,13 +693,80 @@ var UW = unsafeWindow;
                 };
             });
 
-            if (UW.BOOMR && UW.BOOMR.subscribe) {
-                UW.BOOMR.subscribe("rage_click", onRageClick);
-            } else {
-                document.addEventListener("onBoomerangLoaded", function() {
-                    UW.BOOMR.subscribe("rage_click", onRageClick);
-                });
-            }
+            /**
+             * Monitors mouse clicks
+             *
+             * @class BOOMR.plugins.Continuity.ClickMonitor
+             */
+            var ClickMonitor = function() {
+                //
+                // Constants
+                //
+
+                // number of pixels area for Rage Clicks
+                var PIXEL_AREA = 10;
+
+                // number of clicks in the same area to trigger a Rage Click
+                var RAGE_CLICK_THRESHOLD = 3;
+
+                //
+                // Local Members
+                //
+
+                // number of click events
+                var clickCount = 0;
+
+                // number of clicks in the same PIXEL_AREA area
+                var sameClicks = 0;
+
+                // last coordinates
+                var x = 0;
+                var y = 0;
+
+                // last click target
+                var lastTarget = null;
+
+                /**
+                 * Fired when a `click` event happens.
+                 *
+                 * @param {Event} e Event
+                 */
+                function onClick(e) {
+                    var newX = e.clientX;
+                    var newY = e.clientY;
+
+                    // track total number of clicks
+                    clickCount++;
+
+                    // calculate number of pixels moved
+                    var pixels = Math.round(
+                        Math.sqrt(Math.pow(y - newY, 2) +
+                                  Math.pow(x - newX, 2)));
+
+                    // track Rage Clicks
+                    if (lastTarget === e.target || pixels <= PIXEL_AREA) {
+                        sameClicks++;
+
+                        if ((sameClicks + 1) >= RAGE_CLICK_THRESHOLD) {
+                            onRageClick(e);
+                        }
+                    }
+                    else {
+                        sameClicks = 0;
+                    }
+
+                    // track last click coordinates and element
+                    x = newX;
+                    y = newY;
+                    lastTarget = e.target;
+                }
+
+                //
+                // Startup
+                //
+                UW.document.addEventListener("click", onClick, false);
+            };
+            var clickMonitor = new ClickMonitor();
 
             setInterval(reportFps, 1000);
         }
@@ -1011,6 +1078,12 @@ var UW = unsafeWindow;
         initialized = true;
     }
 
+    // set config to enable Continuity
+    UW.BOOMR_config = UW.BOOMR_config || {};
+    UW.BOOMR_config.Continuity = UW.BOOMR_config.Continuity || {};
+    UW.BOOMR_config.Continuity.enabled = true;
+    UW.BOOMR_config.Continuity.waitAfterOnload = UW.CONTINUITY_WAIT_AFTER_ONLOAD;
+
     // check to see if we can initialize as soon as the readystate changes
     document.addEventListener('readystatechange', init, false);
 
@@ -1162,11 +1235,6 @@ if (!UW.cssobj) {
 
 // 3. Boomerang plugins
 function initEmbeddedBoomerang() {
-    //
-    // Boomerang Config
-    //
-    UW.BOOMR_config = { Continuity: { enabled: true, waitAfterOnload: UW.CONTINUITY_WAIT_AFTER_ONLOAD }};
-
     //
     // Check if Boomerang is already on the page
     //
@@ -4366,6 +4434,9 @@ function initEmbeddedBoomerangPlugins() {
                     // of this idle period
                     if (idleIntervals >= TIME_TO_INTERACTIVE_IDLE_INTERVALS) {
                         tti = startTime + ((j - TIME_TO_INTERACTIVE_IDLE_INTERVALS) * COLLECTION_INTERVAL);
+
+                        // ensure we don't set TTI before TTVR
+                        tti = Math.max(tti, visuallyReady);
                         break;
                     }
                 }
@@ -5289,7 +5360,6 @@ function initEmbeddedBoomerangPlugins() {
 
                     if ((sameClicks + 1) >= RAGE_CLICK_THRESHOLD) {
                         rageClicks++;
-                        BOOMR.fireEvent("rage_click", e);
                     }
                 }
                 else {
