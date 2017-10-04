@@ -4302,6 +4302,9 @@ function initEmbeddedBoomerangPlugins() {
                     // of this idle period
                     if (idleIntervals >= TIME_TO_INTERACTIVE_IDLE_INTERVALS) {
                         tti = startTime + ((j - TIME_TO_INTERACTIVE_IDLE_INTERVALS) * COLLECTION_INTERVAL);
+
+                        // ensure we don't set TTI before TTVR
+                        tti = Math.max(tti, visuallyReady);
                         break;
                     }
                 }
