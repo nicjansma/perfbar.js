@@ -930,6 +930,12 @@ var UW = unsafeWindow;
         initialized = true;
     }
 
+    // set config to enable Continuity
+    UW.BOOMR_config = UW.BOOMR_config || {};
+    UW.BOOMR_config.Continuity = UW.BOOMR_config.Continuity || {};
+    UW.BOOMR_config.Continuity.enabled = true;
+    UW.BOOMR_config.Continuity.waitAfterOnload = UW.CONTINUITY_WAIT_AFTER_ONLOAD;
+
     // check to see if we can initialize as soon as the readystate changes
     document.addEventListener('readystatechange', init, false);
 
@@ -1095,11 +1101,6 @@ if (!UW.cssobj) {
 
 // 3. Boomerang plugins
 function initEmbeddedBoomerang() {
-    //
-    // Boomerang Config
-    //
-    UW.BOOMR_config = { Continuity: { enabled: true, waitAfterOnload: UW.CONTINUITY_WAIT_AFTER_ONLOAD }};
-
     //
     // Check if Boomerang is already on the page
     //
