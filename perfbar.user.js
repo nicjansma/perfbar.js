@@ -946,11 +946,102 @@ var UW = unsafeWindow;
           createCookie(cookieName, 'true', 1)
         }
 
-        function toggleShowCacheStatus() {
-            setState("cacheStatus", getState("cacheStatus") ? false : true);
+        // cacheStatus stuff
+      let sheet
+      function toggleShowCacheStatus(e) {
+        sheet = sheet || (function () {
+          var style = document.createElement('style');
+          style.appendChild(document.createTextNode(''));
+          document.head.appendChild(style);
+          return style.sheet;
+        })()
+
+        if (sheet.cssRules.length > 0) {
+          setState("cacheStatus", false);
+          while (sheet.cssRules.length > 0) {
+            sheet.deleteRule(0)
+          }
+        } else {
+          setState("cacheStatus", true);
+          insertRule('.PerfBar-image { outline: 3px solid; outline-offset: -3px; opacity: 0.5; }');
+          insertRule('.PerfBar-browser { outline-color: green }');
+          insertRule('.PerfBar-edge { outline-color: blue }');
+          insertRule('.PerfBar-origin { outline-color: red }');
+        }
+      }
+
+        function insertRule(ruleText) {
+          sheet.insertRule(ruleText, sheet.cssRules.length);
         }
 
-        function readCookie(name) {
+      function identifyCacheOnImage(img) {
+        if (img.complete === false) {
+          img.addEventListener('load', function () {
+            identifyCacheOnImage(img)
+          })
+          return
+        }
+
+        if (!img.ownerDocument) {
+            setTimeout(function() {
+              identifyCacheOnImage(img)
+            }, 10)
+          return
+        }
+
+        var entry = img.ownerDocument.defaultView.performance.getEntriesByName(img.src)[0]
+        if (!entry) {
+          return;
+        }
+
+        if (toolBar.cachedInBrowser(entry)) {
+          img.className = 'PerfBar-image PerfBar-browser'
+        } else if (toolBar.cachedAtEdge(entry)) {
+          img.className = 'PerfBar-image PerfBar-edge'
+        } else {
+          img.className = 'PerfBar-image PerfBar-origin'
+        }
+      }
+
+      function checkForImages(root) {
+        if (!root.getElementsByTagName) return;
+        Array.prototype.forEach.call(root.getElementsByTagName('img'), function (img) {
+          identifyCacheOnImage(img)
+        })
+      }
+      checkForImages(document)
+
+      ;(function initMutationObserver(window) {
+        let target
+        try {
+          target = window.document
+        } catch (e) {
+          //cross-origin
+        }
+        if (!target) return
+
+        new MutationObserver(function (mutations) {
+          mutations.forEach(function (mutation) {
+            if (mutation.type === 'childList') {
+              mutation.addedNodes.forEach(function (addedNode) {
+                checkForImages(addedNode)
+                if (addedNode.tagName) {
+                  if (addedNode.tagName.toLowerCase() === 'img') {
+                    identifyCacheOnImage(this)
+                  }
+                  if (addedNode.tagName.toLowerCase() === 'iframe') {
+                    addedNode.addEventListener('load', function () {
+                      initMutationObserver(this.contentWindow)
+                    })
+                  }
+                }
+              })
+            }
+          })
+        }).observe(target, {attributes: true, childList: true, characterData: true, subtree: true});
+      })(window)
+
+      function readCookie(name) {
           var nameEQ = name + "=";
           var ca = document.cookie.split(';');
           for (var i = 0; i < ca.length; i++) {
@@ -1042,7 +1133,12 @@ var UW = unsafeWindow;
             toggleJank();
         }
 
-        return {
+        if (getState("cacheStatus")) {
+          toggleShowCacheStatus();
+        }
+
+
+      return {
             init: init
         };
     })(toolBar));
@@ -1090,27 +1186,6 @@ var UW = unsafeWindow;
     //
     // PerfBar Options
     //
-
-    //
-    // Shows Cache Status overlay
-    //
-    if (getState("cacheStatus")) {
-      window.addEventListener("load", function () {
-        Array.prototype.forEach.call(document.getElementsByTagName('img'), function (img) {
-          var entry = performance.getEntriesByName(img.src)[0]
-          if (!entry) return
-
-          img.style.opacity = '0.5'
-          if (toolBar.cachedInBrowser(entry)) {
-            img.style.border = 'solid 3px green'
-          } else if (toolBar.cachedAtEdge(entry)) {
-            img.style.border = 'solid 3px blue'
-          } else {
-            img.style.border = 'solid 3px red'
-          }
-        })
-      })
-    }
 
     //
     // Delays Framework initialization
