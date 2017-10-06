@@ -1196,7 +1196,7 @@ var UW = unsafeWindow;
     // Force the Boomerang Continuity Beta
     //
     if (getState("forceBoomerangContinuityBeta")) {
-        loadIframe("https://c.go-mpulse.net/boomerang/boomerang-debug.html?version=1.10038.0")
+        loadIframe("https://c.go-mpulse.net/boomerang/boomerang-debug.html?version=1.10040.0")
     }
 })();
 
