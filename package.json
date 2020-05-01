@@ -1,0 +1,19 @@
+{
+  "name": "perfbar.js",
+  "description": "Floating performance toolbar, powered by Boomerang",
+  "main": "./perfbar.user.js",
+  "author": "Nic Jansma",
+  "version": "1.0.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nicjansma/perfbar.js.git"
+  },
+  "bugs": {
+    "url": "https://github.com/nicjansma/perfbar.js/issues"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "eslint": "^3.12.2",
+    "eslint-config-nicjansma": "^1.0.2"
+  }
+}

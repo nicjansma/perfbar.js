@@ -1,5 +1,5 @@
-// ==UserScript==
 // @name         PerfBar
+// ==UserScript==
 // @namespace    http://nicj.net
 // @version      1.0
 // @author       Nic Jansma, Charlie Vazac
@@ -10,6 +10,7 @@
 // @include      *
 // @noframes
 // ==/UserScript==
+/* global unsafeWindow, GM_setValue, GM_getValue, cssobj, BOOMR, jQuery */
 
 // alias unsafeWindow
 var UW = unsafeWindow;
@@ -37,7 +38,7 @@ var UW = unsafeWindow;
 
         window.requestAnimationFrame(frame);
     }
-})();
+}());
 
 (function() {
     //
@@ -54,7 +55,7 @@ var UW = unsafeWindow;
     //
     // Local Members
     //
-    var initialized = false;
+    var perfBarInitialized = false;
 
     //
     // Constants
@@ -107,7 +108,7 @@ var UW = unsafeWindow;
                     "line-height": "18px",
                     margin: 0,
                     padding: 0,
-                    position: 'fixed',
+                    position: "fixed",
                     "z-index": Number.MAX_SAFE_INTEGER,
                     background: "#404040",
                     opacity: 0.9,
@@ -185,7 +186,7 @@ var UW = unsafeWindow;
             toolBar$.width(screen.width);
 
             // add our graph to the body
-            $('body').prepend(toolBar$);
+            $("body").prepend(toolBar$);
 
             // Make sure to update the height on resize
             $(window).resize(updateToolbarHeight);
@@ -207,7 +208,7 @@ var UW = unsafeWindow;
 
             // recalculate the top to position it on layout change
             var top = $(window).height() - toolBar$.height();
-            if (top != toolBarTop) {
+            if (top !== toolBarTop) {
                 toolBarTop = top;
                 toolBar$.css("top", toolBarTop + "px");
             }
@@ -231,8 +232,8 @@ var UW = unsafeWindow;
 
                     // create the dom
                     var div$ = $("<div>").addClass("perfbar-component");
-                    div$.append($("<div>").addClass("perfbar-component-title").text(name).attr('title', title));
-                    div$.append($("<div>").addClass("perfbar-component-value").text("--").attr('title', title));
+                    div$.append($("<div>").addClass("perfbar-component-title").text(name).attr("title", title));
+                    div$.append($("<div>").addClass("perfbar-component-value").text("--").attr("title", title));
 
                     sections[section].components[name] = {
                         $: div$
@@ -247,7 +248,7 @@ var UW = unsafeWindow;
             var el$ = sections[section].components[component].$.find(".perfbar-component-value");
 
             // pop new values in first with a change of color
-            if (el$.text() != text && !css) {
+            if (el$.text() !== text && !css) {
                 el$.css("color", "#0d0");
 
                 setTimeout(function() {
@@ -293,71 +294,73 @@ var UW = unsafeWindow;
             sections[section].components[component].$
                 .contextMenu({
                     selector: "*",
-                    trigger: 'hover',
+                    trigger: "hover",
                     build: callback
                 });
         }
 
         function findServerTimingEntryByName(rt, seek) {
-          return (rt.serverTiming || []).find(function ({name, metric}) {
-            return name === seek || metric === seek
-          })
+            return (rt.serverTiming || []).find(function({ name, metric }) {
+                return name === seek || metric === seek;
+            });
         }
         function hasPermissiveTAO(rt) {
-          return rt.encodedBodySize > 0
+            return rt.encodedBodySize > 0;
         }
 
-       return {
-          init: init,
-          register: register,
-          update: update,
-          addButton: addButton,
-          addContextMenu: addContextMenu,
-          hasPermissiveTAO: hasPermissiveTAO,
-          formatResourceData: function (count, bytes) {
-            return `${count}# ${Math.round(bytes / 1024)}KB`
-          },
-          cachedInBrowser: function (rt) {
-            return hasPermissiveTAO(rt)
+        return {
+            init: init,
+            register: register,
+            update: update,
+            addButton: addButton,
+            addContextMenu: addContextMenu,
+            hasPermissiveTAO: hasPermissiveTAO,
+            formatResourceData: function(count, bytes) {
+                return `${count}# ${Math.round(bytes / 1024)}KB`;
+            },
+            cachedInBrowser: function(rt) {
+                return hasPermissiveTAO(rt)
               ? rt.transferSize === 0
-              : rt.duration < 30
-          },
-          cachedAtEdge: function (rt) {
-            let origin
-            const entry = findServerTimingEntryByName(rt, 'origin')
-            if (entry) {
-              origin = entry.description === 'true'
+              : rt.duration < 30;
+            },
+            cachedAtEdge: function(rt) {
+                let origin;
+                const entry = findServerTimingEntryByName(rt, "origin");
+                if (entry) {
+                    origin = entry.description === "true";
+                }
+                return origin === false;
+            },
+            getStaticResources: function() {
+                if (!UW.BOOMR || !UW.BOOMR.plugins || !UW.BOOMR.plugins.ResourceTiming) {
+                    return [];
+                }
+                var ret = UW.BOOMR.plugins.ResourceTiming.getFilteredResourceTiming();
+                var entries = Array.isArray(ret) ? ret : ret.entries;
+                return entries.filter(function({ name, initiatorType }) {
+                    if (initiatorType === "html") {
+                        return false;
+                    }
+                    if (initiatorType === "xmlhttprequest") {
+                        if (name.indexOf("akstat.io") > -1) {
+                            return false;
+                        }
+                    }
+                    return true;
+                });
+            },
+            calcEdgeTime: function(rt) {
+                let edgeTime = 0;
+                ["cret", "ctt"].forEach(function(name) {
+                    const entry = findServerTimingEntryByName(rt, name);
+                    if (entry) {
+                        edgeTime += entry.duration || entry.value;
+                    }
+                });
+                return edgeTime;
             }
-            return origin === false
-          },
-          getStaticResources: function () {
-            if (!UW.BOOMR || !UW.BOOMR.plugins || !UW.BOOMR.plugins.ResourceTiming) {
-              return []
-            }
-            var ret = UW.BOOMR.plugins.ResourceTiming.getFilteredResourceTiming()
-            var entries = Array.isArray(ret) ? ret : ret.entries
-            return entries.filter(function ({name, initiatorType}) {
-              if (initiatorType === 'html') return false
-              if (initiatorType === 'xmlhttprequest') {
-                  if (name.indexOf('akstat.io') > -1) {
-                      return false
-                  }
-              }
-              return true
-            })
-          },
-          calcEdgeTime: function (rt) {
-            let edgeTime = 0;
-            ['cret', 'ctt'].forEach(function (name) {
-              const entry = findServerTimingEntryByName(rt, name)
-              if (entry) {
-                edgeTime += entry.duration || entry.value
-              }
-            })
-            return edgeTime
-          }
         };
-    })();
+    }());
 
     //
     // Components
@@ -382,30 +385,36 @@ var UW = unsafeWindow;
             }
         }
         function updateReq() {
-            let edgeTime = 0
-            for (const rt of performance.getEntriesByType('navigation')) {
-              edgeTime += tb.calcEdgeTime(rt)
+            let edgeTime = 0;
+            for (const rt of performance.getEntriesByType("navigation")) {
+                edgeTime += tb.calcEdgeTime(rt);
             }
 
             if (!edgeTime) {
-                updateTiming("Req", performance.timing.requestStart, performance.timing.responseStart);
+                updateTiming(
+                    "Req",
+                    performance.timing.requestStart,
+                    performance.timing.responseStart);
             } else {
-                tb.update("Timings", "Req", `${performance.timing.responseStart - performance.timing.requestStart} (${edgeTime})`)
+                tb.update(
+                    "Timings",
+                    "Req",
+                    `${performance.timing.responseStart - performance.timing.requestStart} (${edgeTime})`);
             }
         }
 
         function init() {
             tb.register("Timings", [
-                {name: "DNS", title: "Domain Name Loopup Duration"},
-                {name: "TCP", title: "TCP Connection Duration"},
-                {name: "Req", title: "HTTP Request Time (responseStart - requestStart)"},
-                {name: "Res", title: "HTTP Response Time (responseEnd - responseStart)"}
+                { name: "DNS", title: "Domain Name Loopup Duration" },
+                { name: "TCP", title: "TCP Connection Duration" },
+                { name: "Req", title: "HTTP Request Time (responseStart - requestStart)" },
+                { name: "Res", title: "HTTP Response Time (responseEnd - responseStart)" }
             ]);
 
             // these should all be ready on startup
             updateTiming("DNS", performance.timing.domainLookupStart, performance.timing.domainLookupEnd);
             updateTiming("TCP", performance.timing.connectStart, performance.timing.connectEnd);
-            updateReq()
+            updateReq();
             updateTiming("Res", performance.timing.responseStart, performance.timing.responseEnd);
         }
 
@@ -434,17 +443,34 @@ var UW = unsafeWindow;
 
         function updateTimings() {
             if (!UW.BOOMR || !UW.BOOMR.plugins || !UW.BOOMR.plugins.Continuity) {
-                return setTimeout(updateTimings, 1000);
+                setTimeout(updateTimings, 1000);
+                return;
             }
 
             var tti = UW.BOOMR.plugins.Continuity.metrics.timeToInteractive();
             var ttvr = UW.BOOMR.plugins.Continuity.metrics.timeToVisuallyReady();
 
-            var firstPaint = UW.performance.getEntriesByType('paint').find(function({name}) { return name === 'first-paint' })
-            firstPaint && updateTiming("FP", performance.timing.navigationStart, performance.timing.navigationStart + Math.round(firstPaint.startTime))
+            var firstPaint = UW.performance.getEntriesByType("paint").find(function({ name }) {
+                return name === "first-paint";
+            });
 
-            var firstContentfulPaint = UW.performance.getEntriesByType('paint').find(function({name}) { return name === 'first-contentful-paint' })
-            firstContentfulPaint && updateTiming("FCP", performance.timing.navigationStart, performance.timing.navigationStart + Math.round(firstContentfulPaint.startTime))
+            if (firstPaint) {
+                updateTiming(
+                    "FP",
+                    performance.timing.navigationStart,
+                    performance.timing.navigationStart + Math.round(firstPaint.startTime));
+            }
+
+            var firstContentfulPaint = UW.performance.getEntriesByType("paint").find(function({ name }) {
+                return name === "first-contentful-paint";
+            });
+
+            if (firstContentfulPaint) {
+                updateTiming(
+                    "FCP",
+                    performance.timing.navigationStart,
+                    performance.timing.navigationStart + Math.round(firstContentfulPaint.startTime));
+            }
 
             updateTiming("DCL", performance.timing.navigationStart, performance.timing.domContentLoadedEventStart);
             updateTiming("Load", performance.timing.navigationStart, performance.timing.loadEventStart);
@@ -464,12 +490,12 @@ var UW = unsafeWindow;
 
         function init() {
             tb.register("Events", [
-                {name: "FP", title: "First Paint"},
-                {name: "FCP", title: "First Contentful Paint"},
-                {name: "DCL", title: "DOMContentLoaded"},
-                {name: "TTVR", title: "Time to Visually Ready"},
-                {name: "Load", title: "Load Time"},
-                {name: "TTI", title: "Time to Interactive"}
+                { name: "FP", title: "First Paint" },
+                { name: "FCP", title: "First Contentful Paint" },
+                { name: "DCL", title: "DOMContentLoaded" },
+                { name: "TTVR", title: "Time to Visually Ready" },
+                { name: "Load", title: "Load Time" },
+                { name: "TTI", title: "Time to Interactive" }
             ]);
 
             setTimeout(updateTimings, 100);
@@ -541,18 +567,18 @@ var UW = unsafeWindow;
                 name = name.toLowerCase();
 
                 // if it has an ID, stop here
-                if (node.attr('id')) {
-                    name = name + "#" + node.attr('id');
+                if (node.attr("id")) {
+                    name = name + "#" + node.attr("id");
                     stop = true;
                 }
 
-                if (node.attr('class')) {
-                    name = name + "." + node.attr('class').trim().split(" ")[0].trim();;
+                if (node.attr("class")) {
+                    name = name + "." + node.attr("class").trim().split(" ")[0].trim();
                 }
 
                 var parent = node.parent();
 
-                path = name + (path ? '>' + path : '');
+                path = name + (path ? ">" + path : "");
                 node = parent;
             }
 
@@ -573,8 +599,8 @@ var UW = unsafeWindow;
         }
 
         function onPerformanceObserver(list) {
-			var entries = list.getEntries();
-			Array.prototype.push.apply(longTasks, entries);
+            var entries = list.getEntries();
+            Array.prototype.push.apply(longTasks, entries);
 
             if (BOOMR.sendMetric) {
                 BOOMR.sendMetric("LongTasks", entries.length);
@@ -586,7 +612,7 @@ var UW = unsafeWindow;
                     color: "red"
                 });
             }
-		}
+        }
 
         // PerformanceObserver
         var perfObserver = new UW.PerformanceObserver(onPerformanceObserver);
@@ -598,9 +624,9 @@ var UW = unsafeWindow;
         function init() {
             initialized = true;
             tb.register("Realtime", [
-                {name: "FPS", title: "Frames Per Second"},
-                {name: "LongTasks", title: "Long Tasks"},
-                {name: "Rage Clicks", title: "Rage Clicks"}
+                { name: "FPS", title: "Frames Per Second" },
+                { name: "LongTasks", title: "Long Tasks" },
+                { name: "Rage Clicks", title: "Rage Clicks" }
             ]);
 
             tb.addContextMenu("Realtime", "LongTasks", function(menuButton$) {
@@ -615,10 +641,10 @@ var UW = unsafeWindow;
                 var i = 0;
                 longTasks.forEach(function(longTask) {
                     var which = longTask.name;
-                    if (which.indexOf('cross-origin') !== -1) {
-                        which = 'cross-origin';
-                    } else if (which.indexOf('same-origin') !== -1) {
-                        which = 'cross-origin';
+                    if (which.indexOf("cross-origin") !== -1) {
+                        which = "cross-origin";
+                    } else if (which.indexOf("same-origin") !== -1) {
+                        which = "cross-origin";
                     }
 
                     var desc = "";
@@ -657,11 +683,11 @@ var UW = unsafeWindow;
 
                 return {
                     items: items,
-                    position: function(opt){
+                    position: function(opt) {
                         // Position using jQuery.ui.position
                         // http://api.jqueryui.com/position/
                         opt.$menu
-                            .position({ my: "center bottom", at: "center top", of: menuButton$})
+                            .position({ my: "center bottom", at: "center top", of: menuButton$ })
                             .css("position", "fixed");
                     }
                 };
@@ -683,11 +709,11 @@ var UW = unsafeWindow;
 
                 return {
                     items: items,
-                    position: function(opt){
+                    position: function(opt) {
                         // Position using jQuery.ui.position
                         // http://api.jqueryui.com/position/
                         opt.$menu
-                            .position({ my: "center bottom", at: "center top", of: menuButton$})
+                            .position({ my: "center bottom", at: "center top", of: menuButton$ })
                             .css("position", "fixed");
                     }
                 };
@@ -713,9 +739,6 @@ var UW = unsafeWindow;
                 // Local Members
                 //
 
-                // number of click events
-                var clickCount = 0;
-
                 // number of clicks in the same PIXEL_AREA area
                 var sameClicks = 0;
 
@@ -735,9 +758,6 @@ var UW = unsafeWindow;
                     var newX = e.clientX;
                     var newY = e.clientY;
 
-                    // track total number of clicks
-                    clickCount++;
-
                     // calculate number of pixels moved
                     var pixels = Math.round(
                         Math.sqrt(Math.pow(y - newY, 2) +
@@ -750,8 +770,7 @@ var UW = unsafeWindow;
                         if ((sameClicks + 1) >= RAGE_CLICK_THRESHOLD) {
                             onRageClick(e);
                         }
-                    }
-                    else {
+                    } else {
                         sameClicks = 0;
                     }
 
@@ -766,6 +785,8 @@ var UW = unsafeWindow;
                 //
                 UW.document.addEventListener("click", onClick, false);
             };
+
+            // eslint-disable-next-line no-unused-vars
             var clickMonitor = new ClickMonitor();
 
             setInterval(reportFps, 1000);
@@ -780,106 +801,130 @@ var UW = unsafeWindow;
     // Resources
     //
     components.push((function(tb) {
-      var resLength = 0;
+        var resLength = 0;
 
-      function updateResources() {
-        var resources = tb.getStaticResources()
+        function updateResources() {
+            var resources = tb.getStaticResources();
 
-        if (resources.length != resLength) {
-          tb.update("Resources", "Total", tb.formatResourceData(resources.length, Math.floor(resources.reduce(function (sum, res) {
-            return sum + (res.encodedBodySize ? res.encodedBodySize : 0);
-          }, 0))));
+            if (resources.length !== resLength) {
+                tb.update(
+                    "Resources",
+                    "Total",
+                    tb.formatResourceData(resources.length, Math.floor(resources.reduce(function(sum, res) {
+                        return sum + (res.encodedBodySize ? res.encodedBodySize : 0);
+                    }, 0))));
 
-          tb.update("Resources", "TAO", Math.round(resources.reduce(function (sum, res) {
-            return sum + (tb.hasPermissiveTAO(res) ? 1 : 0);
-          }, 0) / resources.length * 100) + "%");
+                tb.update("Resources", "TAO", Math.round(resources.reduce(function(sum, res) {
+                    return sum + (tb.hasPermissiveTAO(res) ? 1 : 0);
+                }, 0) / resources.length * 100) + "%");
 
-          let cachedCount = 0, cachedBytes = 0
-          resources.forEach(function (res) {
-            if (tb.cachedInBrowser(res)) {
-              cachedCount++
-              cachedBytes += res.encodedBodySize
+                let cachedCount = 0, cachedBytes = 0;
+                resources.forEach(function(res) {
+                    if (tb.cachedInBrowser(res)) {
+                        cachedCount++;
+                        cachedBytes += res.encodedBodySize;
+                    }
+                });
+                tb.update("Resources", "Cached", tb.formatResourceData(cachedCount, cachedBytes));
+
+                resLength = resources.length;
             }
-          })
-          tb.update("Resources", "Cached", tb.formatResourceData(cachedCount, cachedBytes))
 
-          resLength = resources.length;
+            setTimeout(updateResources, 1000);
         }
 
-        setTimeout(updateResources, 1000);
-      }
+        function init() {
+            tb.register("Resources", [
+          { name: "Total", title: "Total number of resources, total page weight (KB)" },
+          { name: "TAO", title: "Same-Origin or resources with Timing-Allow-Origin set" },
+          { name: "Cached", title: "Count and weight of resources served by the browser" },
+            ]);
+            updateResources();
+        }
 
-      function init() {
-        tb.register("Resources", [
-          {name: "Total", title: "Total number of resources, total page weight (KB)"},
-          {name: "TAO", title: "Same-Origin or resources with Timing-Allow-Origin set"},
-          {name: "Cached", title: "Count and weight of resources served by the browser"},
-        ]);
-        updateResources()
-      }
-
-      return {
-        init: init
-      };
+        return {
+            init: init
+        };
     })(toolBar));
 
   //
   // CDN
   //
-  components.push((function(tb) {
-    var resLength = 0;
+    components.push((function(tb) {
+        var resLength = 0;
 
-    function updateResources() {
-      var resources = tb.getStaticResources()
-      if (resources.length != resLength) {
-        const places = {
-          origin: {count: 0, bytes: 0},
-          edge: {count: 0, bytes: 0},
-          im: {count: 0, bytes: 0},
-        }
-        let edgeTime = 0
-        for (const rt of resources) {
-          const wasCachedAtEdge = tb.cachedAtEdge(rt)
-          if (wasCachedAtEdge) {
-            const disk = (rt.serverTiming || []).find(function ({name, metric}) {
-              return name === 'disk' || metric === 'disk'
-            })
-            if (disk) {
-              places.im.count++
-              places.im.bytes += (Number(disk.description) - rt.encodedBodySize)
+        function updateResources() {
+            var resources = tb.getStaticResources();
+            if (resources.length !== resLength) {
+                const places = {
+                    origin: { count: 0, bytes: 0 },
+                    edge: { count: 0, bytes: 0 },
+                    im: { count: 0, bytes: 0 },
+                };
+                let edgeTime = 0;
+                for (const rt of resources) {
+                    const wasCachedAtEdge = tb.cachedAtEdge(rt);
+                    if (wasCachedAtEdge) {
+                        const disk = (rt.serverTiming || []).find(function({ name, metric }) {
+                            return name === "disk" || metric === "disk";
+                        });
+                        if (disk) {
+                            places.im.count++;
+                            places.im.bytes += (Number(disk.description) - rt.encodedBodySize);
+                        }
+                    }
+
+                    if (!tb.cachedInBrowser(rt)) {
+                        const place = wasCachedAtEdge ? places.edge : places.origin;
+                        place.count++;
+                        place.bytes += rt.encodedBodySize;
+                        edgeTime += tb.calcEdgeTime(rt);
+                    }
+                }
+
+                tb.update(
+                    "CDN",
+                    "Edge",
+                    `${tb.formatResourceData(places.edge.count, places.edge.bytes)} ${edgeTime}ms`);
+                tb.update(
+                    "CDN",
+                    "Origin",
+                    tb.formatResourceData(places.origin.count, places.origin.bytes));
+                tb.update(
+                    "CDN",
+                    "IM",
+                    tb.formatResourceData(places.im.count, places.im.bytes));
+
+                resLength = resources.length;
             }
-          }
 
-          if (!tb.cachedInBrowser(rt)) {
-            const place = wasCachedAtEdge ? places['edge'] : places['origin']
-            place.count++
-            place.bytes += rt.encodedBodySize
-            edgeTime += tb.calcEdgeTime(rt)
-          }
+            setTimeout(updateResources, 1000);
         }
 
-        tb.update("CDN", "Edge", `${tb.formatResourceData(places.edge.count, places.edge.bytes)} ${edgeTime}ms`)
-        tb.update("CDN", "Origin", tb.formatResourceData(places.origin.count, places.origin.bytes))
-        tb.update("CDN", "IM", tb.formatResourceData(places.im.count, places.im.bytes))
-        resLength = resources.length;
-      }
+        function init() {
+            tb.register("CDN",
+                [
+                    {
+                        name: "Edge",
+                        title: "Count and weight of resources served by the edge"
+                    },
+                    {
+                        name: "Origin",
+                        title: "Count and weight of resources served by the origin"
+                    },
+                    {
+                        name: "IM",
+                        title: "Image Manager: Number of Resources processed" +
+                            " by Image Manager -and- Total savings in KB"
+                    },
+                ]);
+            updateResources();
+        }
 
-      setTimeout(updateResources, 1000);
-    }
-
-    function init() {
-      tb.register("CDN", [
-        {name: "Edge", title: "Count and weight of resources served by the edge"},
-        {name: "Origin", title: "Count and weight of resources served by the origin"},
-        {name: "IM", title: "Image Manager: Number of Resources processed by Image Manager -and- Total savings in KB"},
-      ]);
-      updateResources()
-    }
-
-    return {
-      init: init
-    };
-  })(toolBar));
+        return {
+            init: init
+        };
+    })(toolBar));
 
     //
     // Controls
@@ -894,6 +939,8 @@ var UW = unsafeWindow;
             var startTime = (new Date()).getTime();
             var now = startTime;
             var endTime = startTime + ms;
+
+            // eslint-disable-next-line no-unused-vars
             var math = 1;
 
             while (now < endTime) {
@@ -912,13 +959,13 @@ var UW = unsafeWindow;
             if (jankInterval) {
                 clearInterval(jankInterval);
                 jankInterval = false;
-                window.removeEventListener('scroll', scrollJank);
+                window.removeEventListener("scroll", scrollJank);
 
                 // save state
                 setState("jank", false);
             } else {
                 jankInterval = setInterval(jank, 500);
-                window.addEventListener('scroll', scrollJank);
+                window.addEventListener("scroll", scrollJank);
 
                 // save state
                 setState("jank", true);
@@ -938,131 +985,143 @@ var UW = unsafeWindow;
         }
 
         function toggleDisableEdgeCache() {
-          const cookieName = 'AK_FORCE_ORIGIN'
-          var force = readCookie(cookieName)
-          if (force === 'true') {
-            return createCookie(cookieName, '', -1);
-          }
-          createCookie(cookieName, 'true', 1)
+            const cookieName = "AK_FORCE_ORIGIN";
+
+            var force = readCookie(cookieName);
+
+            if (force === "true") {
+                createCookie(cookieName, "", -1);
+                return;
+            }
+
+            createCookie(cookieName, "true", 1);
         }
 
         // cacheStatus stuff
-      let sheet
-      function toggleShowCacheStatus(e) {
-        sheet = sheet || (function () {
-          var style = document.createElement('style');
-          style.appendChild(document.createTextNode(''));
-          document.head.appendChild(style);
-          return style.sheet;
-        })()
+        let sheet;
+        function toggleShowCacheStatus() {
+            sheet = sheet || (function() {
+                var style = document.createElement("style");
+                style.appendChild(document.createTextNode(""));
+                document.head.appendChild(style);
+                return style.sheet;
+            }());
 
-        if (sheet.cssRules.length > 0) {
-          setState("cacheStatus", false);
-          while (sheet.cssRules.length > 0) {
-            sheet.deleteRule(0)
-          }
-        } else {
-          setState("cacheStatus", true);
-          insertRule('.PerfBar-image { outline: 3px solid; outline-offset: -3px; opacity: 0.5; }');
-          insertRule('.PerfBar-browser { outline-color: green }');
-          insertRule('.PerfBar-edge { outline-color: blue }');
-          insertRule('.PerfBar-origin { outline-color: red }');
+            if (sheet.cssRules.length > 0) {
+                setState("cacheStatus", false);
+                while (sheet.cssRules.length > 0) {
+                    sheet.deleteRule(0);
+                }
+            } else {
+                setState("cacheStatus", true);
+                insertRule(".PerfBar-image { outline: 3px solid; outline-offset: -3px; opacity: 0.5; }");
+                insertRule(".PerfBar-browser { outline-color: green }");
+                insertRule(".PerfBar-edge { outline-color: blue }");
+                insertRule(".PerfBar-origin { outline-color: red }");
+            }
         }
-      }
 
         function insertRule(ruleText) {
-          sheet.insertRule(ruleText, sheet.cssRules.length);
+            sheet.insertRule(ruleText, sheet.cssRules.length);
         }
 
-      function identifyCacheOnImage(img) {
-        if (img.complete === false) {
-          img.addEventListener('load', function () {
-            identifyCacheOnImage(img)
-          })
-          return
+        function identifyCacheOnImage(img) {
+            if (img.complete === false) {
+                img.addEventListener("load", function() {
+                    identifyCacheOnImage(img);
+                });
+                return;
+            }
+
+            if (!img.ownerDocument) {
+                setTimeout(function() {
+                    identifyCacheOnImage(img);
+                }, 10);
+                return;
+            }
+
+            var entry = img.ownerDocument.defaultView.performance.getEntriesByName(img.src)[0];
+            if (!entry) {
+                return;
+            }
+
+            if (toolBar.cachedInBrowser(entry)) {
+                img.className = "PerfBar-image PerfBar-browser";
+            } else if (toolBar.cachedAtEdge(entry)) {
+                img.className = "PerfBar-image PerfBar-edge";
+            } else {
+                img.className = "PerfBar-image PerfBar-origin";
+            }
         }
 
-        if (!img.ownerDocument) {
-            setTimeout(function() {
-              identifyCacheOnImage(img)
-            }, 10)
-          return
+        function checkForImages(root) {
+            if (!root.getElementsByTagName) {
+                return;
+            }
+            Array.prototype.forEach.call(root.getElementsByTagName("img"), function(img) {
+                identifyCacheOnImage(img);
+            });
         }
-
-        var entry = img.ownerDocument.defaultView.performance.getEntriesByName(img.src)[0]
-        if (!entry) {
-          return;
-        }
-
-        if (toolBar.cachedInBrowser(entry)) {
-          img.className = 'PerfBar-image PerfBar-browser'
-        } else if (toolBar.cachedAtEdge(entry)) {
-          img.className = 'PerfBar-image PerfBar-edge'
-        } else {
-          img.className = 'PerfBar-image PerfBar-origin'
-        }
-      }
-
-      function checkForImages(root) {
-        if (!root.getElementsByTagName) return;
-        Array.prototype.forEach.call(root.getElementsByTagName('img'), function (img) {
-          identifyCacheOnImage(img)
-        })
-      }
-      checkForImages(document)
+        checkForImages(document)
 
       ;(function initMutationObserver(window) {
-        let target
-        try {
-          target = window.document
-        } catch (e) {
-          //cross-origin
-        }
-        if (!target) return
-
-        new MutationObserver(function (mutations) {
-          mutations.forEach(function (mutation) {
-            if (mutation.type === 'childList') {
-              mutation.addedNodes.forEach(function (addedNode) {
-                checkForImages(addedNode)
-                if (addedNode.tagName) {
-                  if (addedNode.tagName.toLowerCase() === 'img') {
-                    identifyCacheOnImage(this)
-                  }
-                  if (addedNode.tagName.toLowerCase() === 'iframe') {
-                    addedNode.addEventListener('load', function () {
-                      initMutationObserver(this.contentWindow)
-                    })
-                  }
-                }
-              })
-            }
-          })
-        }).observe(target, {attributes: true, childList: true, characterData: true, subtree: true});
-      })(window)
-
-      function readCookie(name) {
-          var nameEQ = name + "=";
-          var ca = document.cookie.split(';');
-          for (var i = 0; i < ca.length; i++) {
-            var c = ca[i];
-            while (c.charAt(0) == ' ') c = c.substring(1, c.length);
-            if (c.indexOf(nameEQ) == 0) return c.substring(nameEQ.length, c.length);
+          let target;
+          try {
+              target = window.document;
+          } catch (e) {
+          // cross-origin
           }
-          return null;
+          if (!target) {
+              return;
+          }
+
+          new MutationObserver(function(mutations) {
+              mutations.forEach(function(mutation) {
+                  if (mutation.type === "childList") {
+                      mutation.addedNodes.forEach(function(addedNode) {
+                          checkForImages(addedNode);
+                          if (addedNode.tagName) {
+                              if (addedNode.tagName.toLowerCase() === "img") {
+                                  identifyCacheOnImage(this);
+                              }
+                              if (addedNode.tagName.toLowerCase() === "iframe") {
+                                  addedNode.addEventListener("load", function() {
+                                      initMutationObserver(this.contentWindow);
+                                  });
+                              }
+                          }
+                      });
+                  }
+              });
+          }).observe(target, { attributes: true, childList: true, characterData: true, subtree: true });
+      }(window));
+
+        function readCookie(name) {
+            var nameEQ = name + "=";
+            var ca = document.cookie.split(";");
+            for (var i = 0; i < ca.length; i++) {
+                var c = ca[i];
+                while (c.charAt(0) === " ") {
+                    c = c.substring(1, c.length);
+                }
+                if (c.indexOf(nameEQ) === 0) {
+                    return c.substring(nameEQ.length, c.length);
+                }
+            }
+            return null;
         }
 
-      function createCookie(name,value,days) {
-        var expires = "";
-        if (days) {
-          var date = new Date();
-          date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
-          expires = "; expires=" + date.toUTCString();
+        function createCookie(name, value, days) {
+            var expires = "";
+            if (days) {
+                var date = new Date();
+                date.setTime(date.getTime() + (days * 24 * 60 * 60 * 1000));
+                expires = "; expires=" + date.toUTCString();
+            }
+            document.cookie = name + "=" + value + expires + "; path=/";
         }
-        document.cookie = name + "=" + value + expires + "; path=/";
-      }
 
-      function init() {
+        function init() {
             if (!UW.jQuery || !UW.jQuery.contextMenu) {
                 setTimeout(init, 100);
                 return;
@@ -1073,8 +1132,8 @@ var UW = unsafeWindow;
             menuButton$.addClass("perfbar-context-menu")
                 .parent().contextMenu({
                     selector: ".perfbar-context-menu",
-                    trigger: 'left',
-                    build: function(triggerElement$, e) {
+                    trigger: "left",
+                    build: function() {
                         return {
                             items: {
                                 "jank": {
@@ -1099,7 +1158,7 @@ var UW = unsafeWindow;
                                     name: "Disable Edge Cache",
                                     type: "checkbox",
                                     events: { click: toggleDisableEdgeCache },
-                                    selected: readCookie('AK_FORCE_ORIGIN') === 'true'
+                                    selected: readCookie("AK_FORCE_ORIGIN") === "true"
                                 },
                                 "showCacheStatus": {
                                     name: "Show Cache Status",
@@ -1114,11 +1173,11 @@ var UW = unsafeWindow;
                                     selected: getState("forceBoomerangContinuity"),
                                 }
                             },
-                            position: function(opt){
+                            position: function(opt) {
                                 // Position using jQuery.ui.position
                                 // http://api.jqueryui.com/position/
                                 opt.$menu
-                                    .position({ my: "right bottom", at: "right top-10", of: menuButton$})
+                                    .position({ my: "right bottom", at: "right top-10", of: menuButton$ })
                                     .css("position", "fixed");
                             }
                         };
@@ -1134,11 +1193,10 @@ var UW = unsafeWindow;
         }
 
         if (getState("cacheStatus")) {
-          toggleShowCacheStatus();
+            toggleShowCacheStatus();
         }
 
-
-      return {
+        return {
             init: init
         };
     })(toolBar));
@@ -1146,14 +1204,14 @@ var UW = unsafeWindow;
     //
     // General initialization
     //
-    function init() {
-        if (initialized) {
+    function perfBarInit() {
+        if (perfBarInitialized) {
             return;
         }
 
         if (!UW.jQuery || !UW.cssobj) {
             // try again soon
-            setTimeout(init, 100);
+            setTimeout(perfBarInit, 100);
             return;
         }
 
@@ -1171,7 +1229,7 @@ var UW = unsafeWindow;
             }
         }
 
-        initialized = true;
+        perfBarInitialized = true;
     }
 
     // set config to enable Continuity
@@ -1181,7 +1239,7 @@ var UW = unsafeWindow;
     UW.BOOMR_config.Continuity.waitAfterOnload = UW.CONTINUITY_WAIT_AFTER_ONLOAD;
 
     // check to see if we can initialize as soon as the readystate changes
-    document.addEventListener('readystatechange', init, false);
+    document.addEventListener("readystatechange", perfBarInit, false);
 
     //
     // PerfBar Options
@@ -1192,52 +1250,58 @@ var UW = unsafeWindow;
     //
     if (getState("delayFrameworkHandlers")) {
         var ael = EventTarget.prototype.addEventListener;
-        var delayedEvents = ['click'], delay = DELAY_FRAMEWORK_HANDLER_MS;
+        var delayedEvents = ["click"], delay = DELAY_FRAMEWORK_HANDLER_MS;
 
         EventTarget.prototype.addEventListener = function() {
-            var _this = this, args = arguments;
+            var that = this, args = arguments;
             var eventName = arguments[0];
 
             function isAttached(elem) {
-                if (!elem) return false
-                if (typeof elem.nodeType === 'undefined') return true
-                if (elem.nodeType === 9) return true
-                return isAttached(elem.parentNode)
+                if (!elem) {
+                    return false;
+                }
+                if (typeof elem.nodeType === "undefined") {
+                    return true;
+                }
+                if (elem.nodeType === 9) {
+                    return true;
+                }
+                return isAttached(elem.parentNode);
             }
 
-            var perfbar = document.getElementById('perfbar')
+            var perfbar = document.getElementById("perfbar");
             if (delayedEvents.indexOf(arguments[0]) === -1 ||
                 (perfbar && perfbar.contains(this)) ||
                 !isAttached(this)) {
-                ael.apply(_this, args);
+                ael.apply(that, args);
                 return;
             }
 
             setTimeout(function() {
-                ael.apply(_this, args);
-                _this.removeEventListener(eventName, rage);
-            }, delay)
+                ael.apply(that, args);
+                that.removeEventListener(eventName, rage);
+            }, delay);
 
-            var rage = function(e) {
+            function rage(e) {
                 e.stopPropagation();
-                if (!_this.style) {
+                if (!that.style) {
                     return;
                 }
 
-                var elem = _this;
-                if (elem.tagName.toLowerCase() === 'a') {
+                var elem = that;
+                if (elem.tagName.toLowerCase() === "a") {
                     elem = elem.parentNode;
                 }
 
-                elem['old-border'] = elem['old-border'] || elem.style.border;
-                elem.style.border = 'solid 1px red';
+                elem["old-border"] = elem["old-border"] || elem.style.border;
+                elem.style.border = "solid 1px red";
                 setTimeout(function() {
-                    elem.style.border = elem['old-border'];
+                    elem.style.border = elem["old-border"];
                 }, 500);
             }
 
-            ael.call(_this, eventName, rage);
-        }
+            ael.call(that, eventName, rage);
+        };
     }
 
     function loadIframe(src) {
@@ -1257,23 +1321,25 @@ var UW = unsafeWindow;
     if (getState("badThirdParty")) {
         var thirdPartyFrame = loadIframe("https://nicj.net/dev/bad-third-party.html");
         if (document.readyState === "complete") {
-            thirdPartyFrame.contentWindow.postMessage("busy", "*")
+            thirdPartyFrame.contentWindow.postMessage("busy", "*");
         } else {
             window.addEventListener("load", function() {
                 setTimeout(function() {
                     thirdPartyFrame.contentWindow.postMessage("busy", "*");
                 }, 10);
             }, false);
-        };
+        }
     }
 
     //
     // Force the Boomerang Continuity Beta
     //
     if (getState("forceBoomerangContinuity")) {
-        loadIframe("https://c.go-mpulse.net/boomerang/boomerang-debug.html?version=1.571.0")
+        loadIframe("https://c.go-mpulse.net/boomerang/boomerang-debug.html?version=1.571.0");
     }
-})();
+}());
+
+/* eslint-disable */
 
 //
 // ==================================================================

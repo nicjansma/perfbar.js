@@ -1,0 +1,19 @@
+{
+    extends: "nicjansma",
+    env: {
+        node: true,
+        browser: true
+    },
+    parserOptions: {
+        ecmaVersion: 2017
+    },
+    rules: {
+        strict: 0,
+        "no-inner-declarations": 0,
+        "new-cap": 0,
+        "no-underscore-dangle": 0,
+        "no-console": 0,
+        camelcase: 0,
+        "no-nested-ternary": 0
+    }
+}
