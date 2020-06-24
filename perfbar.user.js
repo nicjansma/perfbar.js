@@ -320,8 +320,8 @@ var UW = unsafeWindow;
             },
             cachedInBrowser: function(rt) {
                 return hasPermissiveTAO(rt)
-              ? rt.transferSize === 0
-              : rt.duration < 30;
+                    ? rt.transferSize === 0
+                    : rt.duration < 30;
             },
             cachedAtEdge: function(rt) {
                 let origin;
@@ -835,9 +835,9 @@ var UW = unsafeWindow;
 
         function init() {
             tb.register("Resources", [
-          { name: "Total", title: "Total number of resources, total page weight (KB)" },
-          { name: "TAO", title: "Same-Origin or resources with Timing-Allow-Origin set" },
-          { name: "Cached", title: "Count and weight of resources served by the browser" },
+                { name: "Total", title: "Total number of resources, total page weight (KB)" },
+                { name: "TAO", title: "Same-Origin or resources with Timing-Allow-Origin set" },
+                { name: "Cached", title: "Count and weight of resources served by the browser" },
             ]);
             updateResources();
         }
@@ -847,9 +847,9 @@ var UW = unsafeWindow;
         };
     })(toolBar));
 
-  //
-  // CDN
-  //
+    //
+    // CDN
+    //
     components.push((function(tb) {
         var resLength = 0;
 
@@ -1064,37 +1064,37 @@ var UW = unsafeWindow;
         }
         checkForImages(document)
 
-      ;(function initMutationObserver(window) {
-          let target;
-          try {
-              target = window.document;
-          } catch (e) {
-          // cross-origin
-          }
-          if (!target) {
-              return;
-          }
+        ;(function initMutationObserver(window) {
+            let target;
+            try {
+                target = window.document;
+            } catch (e) {
+                // cross-origin
+            }
+            if (!target) {
+                return;
+            }
 
-          new MutationObserver(function(mutations) {
-              mutations.forEach(function(mutation) {
-                  if (mutation.type === "childList") {
-                      mutation.addedNodes.forEach(function(addedNode) {
-                          checkForImages(addedNode);
-                          if (addedNode.tagName) {
-                              if (addedNode.tagName.toLowerCase() === "img") {
-                                  identifyCacheOnImage(this);
-                              }
-                              if (addedNode.tagName.toLowerCase() === "iframe") {
-                                  addedNode.addEventListener("load", function() {
-                                      initMutationObserver(this.contentWindow);
-                                  });
-                              }
-                          }
-                      });
-                  }
-              });
-          }).observe(target, { attributes: true, childList: true, characterData: true, subtree: true });
-      }(window));
+            new MutationObserver(function(mutations) {
+                mutations.forEach(function(mutation) {
+                    if (mutation.type === "childList") {
+                        mutation.addedNodes.forEach(function(addedNode) {
+                            checkForImages(addedNode);
+                            if (addedNode.tagName) {
+                                if (addedNode.tagName.toLowerCase() === "img") {
+                                    identifyCacheOnImage(this);
+                                }
+                                if (addedNode.tagName.toLowerCase() === "iframe") {
+                                    addedNode.addEventListener("load", function() {
+                                        initMutationObserver(this.contentWindow);
+                                    });
+                                }
+                            }
+                        });
+                    }
+                });
+            }).observe(target, { attributes: true, childList: true, characterData: true, subtree: true });
+        }(window));
 
         function readCookie(name) {
             var nameEQ = name + "=";
